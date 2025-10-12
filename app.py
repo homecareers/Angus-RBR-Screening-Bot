@@ -1,3 +1,5 @@
+# === ANGUS™ Survey Bot — Booking Logic Upgrade v1 ===
+
 from flask import Flask, render_template, request, jsonify
 import requests
 import datetime
@@ -13,14 +15,16 @@ AIRTABLE_API_KEY = os.getenv('AIRTABLE_API_KEY')
 AIRTABLE_BASE_ID = os.getenv('AIRTABLE_BASE_ID') 
 AIRTABLE_RESPONSES_TABLE = os.getenv('AIRTABLE_TABLE_NAME') or "Survey Responses"
 AIRTABLE_PROSPECTS_TABLE = os.getenv('AIRTABLE_PROSPECTS_TABLE') or "Prospects"
+AIRTABLE_USERS_TABLE = os.getenv('AIRTABLE_USERS_TABLE') or "Users"
 
 BASE_ID = AIRTABLE_BASE_ID
 HQ_TABLE = AIRTABLE_PROSPECTS_TABLE
 RESPONSES_TABLE = AIRTABLE_RESPONSES_TABLE
+USERS_TABLE = AIRTABLE_USERS_TABLE
 
 # GHL credentials
-GHL_API_KEY = os.getenv('GHL_API_KEY') or "d9d7d5e9-4322-4bc0-ad64-969e9194bfc2"
-GHL_LOCATION_ID = os.getenv('GHL_LOCATION_ID') or "nxwUZI406A795cE76Wqs"
+GHL_API_KEY = os.getenv('GHL_API_KEY')
+GHL_LOCATION_ID = os.getenv('GHL_LOCATION_ID')
 GHL_BASE_URL = "https://rest.gohighlevel.com/v1"
 
 # Airtable helpers
@@ -30,6 +34,20 @@ def _h():
 def _url(table, record_id=None):
     base = f"https://api.airtable.com/v0/{BASE_ID}/{urllib.parse.quote(table)}"
     return f"{base}/{record_id}" if record_id else base
+
+# Get assignedUserId from Users table based on legacy code
+def get_assigned_user_id(legacy_code):
+    try:
+        formula = f"{{Legacy Code}} = '{legacy_code}'"
+        params = {"filterByFormula": formula}
+        r = requests.get(_url(USERS_TABLE), headers=_h(), params=params)
+        r.raise_for_status()
+        records = r.json().get("records", [])
+        if records and "fields" in records[0]:
+            return records[0]["fields"].get("GHL User ID")
+    except Exception as e:
+        print(f"⚠️ Error retrieving assignedUserId: {e}")
+    return None
 
 # Create Prospect + Legacy Code
 def create_prospect_and_legacy_code(email, phone):
@@ -56,10 +74,9 @@ def create_prospect_and_legacy_code(email, phone):
 
     return legacy_code, rec_id
 
-# Push to GHL
+# Push to GHL with assignedUserId
 def push_to_ghl(email, phone, legacy_code, answers, record_id):
     try:
-        # Clean phone: digits only, add +1 if US
         clean_phone = re.sub(r"\D", "", phone)
         if len(clean_phone) == 10:
             clean_phone = "+1" + clean_phone
@@ -69,6 +86,9 @@ def push_to_ghl(email, phone, legacy_code, answers, record_id):
             clean_phone = "+" + clean_phone
 
         print(f"📞 Cleaned phone for GHL: {clean_phone}")
+
+        assigned_user_id = get_assigned_user_id(legacy_code)
+        print(f"👤 Found assignedUserId: {assigned_user_id or '❌ None'}")
 
         url = f"{GHL_BASE_URL}/contacts"
         headers = {"Authorization": f"Bearer {GHL_API_KEY}", "Content-Type": "application/json"}
@@ -87,6 +107,9 @@ def push_to_ghl(email, phone, legacy_code, answers, record_id):
                 "legacy_code_id": legacy_code
             }
         }
+
+        if assigned_user_id:
+            payload["assignedUserId"] = assigned_user_id
 
         r = requests.post(url, headers=headers, json=payload)
         if r.status_code == 200:
@@ -123,7 +146,6 @@ def submit():
 
         legacy_code, prospect_id = create_prospect_and_legacy_code(email, phone)
 
-        # Save Survey Responses in Airtable
         survey_payload = {
             "fields": {
                 "Date Submitted": datetime.datetime.now().isoformat(),
@@ -137,14 +159,12 @@ def submit():
                 "Prospects": [prospect_id]
             }
         }
-        responses_url = _url(RESPONSES_TABLE)
-        r3 = requests.post(responses_url, headers=_h(), json=survey_payload)
+        r3 = requests.post(_url(RESPONSES_TABLE), headers=_h(), json=survey_payload)
         if r3.status_code == 200:
             print("✅ Saved survey responses")
         else:
             print(f"❌ Error saving responses: {r3.text}")
 
-        # ⏱ Wait 1 minute before pushing to GHL
         print("⏱ Waiting 60s before GHL sync...")
         time.sleep(60)
 
