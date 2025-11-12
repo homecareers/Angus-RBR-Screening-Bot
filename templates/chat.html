@@ -25,11 +25,11 @@
       animation: fadeIn 0.5s ease-in;
     }
     .bot { 
-      color: #33E1FF;        /* Primary Aqua – ANGUS voice */
+      color: #33E1FF;
       font-weight: 500;
     }
     .user { 
-      color: #00B4D8;        /* Slightly deeper tone for user replies */
+      color: #00B4D8;
       text-align: right; 
       font-weight: 500;
     }
@@ -41,7 +41,7 @@
       margin: 8px 0; 
       width: 100%; 
       padding: 12px 16px; 
-      border: 1px solid #00FFC8;     /* Second hue – vibrant aqua-green */
+      border: 1px solid #00FFC8; 
       border-radius: 8px; 
       background: #1e1e1e; 
       color: #00FFC8; 
@@ -52,7 +52,7 @@
       letter-spacing: 0.3px;
     }
     .options button:hover {
-      background: #33E1FF;           /* Luminous aqua on hover */
+      background: #33E1FF;
       color: #000;
       transform: translateY(-1px);
       box-shadow: 0 0 14px rgba(0,255,200,0.45);
@@ -60,6 +60,22 @@
     .options button:active {
       transform: translateY(0);
       box-shadow: 0 0 6px rgba(0,255,200,0.3);
+    }
+    input {
+      width: 100%;
+      padding: 12px;
+      margin-top: 15px;
+      border: 2px solid #00FFC8;
+      border-radius: 8px;
+      background: #222;
+      color: #fff;
+      font-size: 16px;
+      box-sizing: border-box;
+    }
+    input:focus {
+      outline: none;
+      border-color: #33E1FF;
+      box-shadow: 0 0 10px rgba(51,225,255,0.3);
     }
     .completion {
       background: linear-gradient(45deg, #33E1FF, #00FFC8);
@@ -69,11 +85,6 @@
       text-align: center;
       margin: 20px 0;
       font-weight: bold;
-    }
-    .legacy-code {
-      font-size: 24px;
-      margin: 15px 0;
-      letter-spacing: 2px;
     }
     @keyframes fadeIn {
       from { opacity: 0; transform: translateY(10px); }
@@ -152,6 +163,7 @@
 
     let answers = [];
     let step = 0;
+    let userEmail = "";
 
     function showBotMessage(msg) {
       const chatDiv = document.getElementById("chat");
@@ -194,7 +206,7 @@
           document.getElementById("chat").scrollTop = document.getElementById("chat").scrollHeight;
         }, 1000);
       } else {
-        submitSurvey();
+        askForEmail();
       }
     }
 
@@ -206,10 +218,38 @@
       setTimeout(() => askNext(), 500);
     }
 
-    /* Redirect to booking page after final question submission */
+    function askForEmail() {
+      showLoading();
+      setTimeout(() => {
+        hideLoading();
+        showBotMessage("Last thing — what’s the email you used to download your Real Brick Road™ booklet?<br><br>That’s how I’ll keep your answers linked to your record.");
+        document.getElementById("chat").innerHTML += `
+          <input id="emailInput" type="email" placeholder="Enter your email address" onkeydown="if(event.key==='Enter'){saveEmail();}">
+        `;
+        document.getElementById("emailInput").focus();
+      }, 1000);
+    }
+
+    function saveEmail() {
+      const email = document.getElementById("emailInput").value.trim();
+      if (!email) {
+        alert("Please enter your email address.");
+        return;
+      }
+      const emailRegex = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;
+      if (!emailRegex.test(email)) {
+        alert("Please enter a valid email address.");
+        return;
+      }
+      userEmail = email;
+      showUserMessage(email);
+      document.getElementById("emailInput").remove();
+      submitSurvey();
+    }
+
     function submitSurvey() {
       showLoading();
-      const surveyData = { answers: answers };
+      const surveyData = { email: userEmail, answers: answers };
       
       fetch("/submit", {
         method: "POST",
@@ -224,7 +264,7 @@
         
         setTimeout(() => {
           window.location.href = "https://therealbrickroad.com/booknow";
-        }, 2000);  // 2 second delay for cinematic timing
+        }, 2000);
       })
       .catch(err => {
         hideLoading();
