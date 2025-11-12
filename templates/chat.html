@@ -206,9 +206,11 @@
       setTimeout(() => askNext(), 500);
     }
 
+    /* Redirect to booking page after final question submission */
     function submitSurvey() {
       showLoading();
       const surveyData = { answers: answers };
+      
       fetch("/submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -217,8 +219,12 @@
       .then(r => r.json())
       .then(() => {
         hideLoading();
-        showBotMessage("🎉 Boom! You’re officially in the game!");
-        showBotMessage("Your personalized roadmap is being crafted by ANGUS™. Check your inbox soon!");
+        showBotMessage("✅ Angus has verified your record...");
+        showBotMessage("Redirecting you to your personal consultation page...");
+        
+        setTimeout(() => {
+          window.location.href = "https://therealbrickroad.com/booknow";
+        }, 2000);  // 2 second delay for cinematic timing
       })
       .catch(err => {
         hideLoading();
