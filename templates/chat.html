@@ -47,19 +47,15 @@
       color: #00FFC8; 
       cursor: pointer; 
       font-size: 14px;
-      transition: all 0.3s ease;
+      transition: all 0.25s ease;
       text-align: left;
       letter-spacing: 0.3px;
     }
     .options button:hover {
       background: #33E1FF;
       color: #000;
-      transform: translateY(-1px);
+      transform: translateY(-2px);
       box-shadow: 0 0 14px rgba(0,255,200,0.45);
-    }
-    .options button:active {
-      transform: translateY(0);
-      box-shadow: 0 0 6px rgba(0,255,200,0.3);
     }
     input {
       width: 100%;
@@ -76,15 +72,6 @@
       outline: none;
       border-color: #33E1FF;
       box-shadow: 0 0 10px rgba(51,225,255,0.3);
-    }
-    .completion {
-      background: linear-gradient(45deg, #33E1FF, #00FFC8);
-      color: #000;
-      padding: 20px;
-      border-radius: 8px;
-      text-align: center;
-      margin: 20px 0;
-      font-weight: bold;
     }
     @keyframes fadeIn {
       from { opacity: 0; transform: translateY(10px); }
@@ -108,7 +95,9 @@
 </head>
 <body>
   <div class="chat-box" id="chat"></div>
+
   <script>
+    /* ---------------------- Survey Questions ---------------------- */
     const surveyFlow = [
       {
         question: "When you picture your future, which one gets you fired up the most?",
@@ -165,6 +154,7 @@
     let step = 0;
     let userEmail = "";
 
+    /* ---------------------- Message Functions ---------------------- */
     function showBotMessage(msg) {
       const chatDiv = document.getElementById("chat");
       chatDiv.innerHTML += `<div class='message bot'>${msg}</div>`;
@@ -188,23 +178,25 @@
       if (loadingDiv) loadingDiv.remove();
     }
 
+    /* ---------------------- Survey Logic ---------------------- */
     function askNext() {
       if (step < surveyFlow.length) {
         showLoading();
         setTimeout(() => {
           hideLoading();
+
           let q = surveyFlow[step];
           showBotMessage(`<strong>Question ${step + 1} of 6:</strong><br><br>${q.question}`);
-          
+
           let optionsHTML = "<div class='options'>";
           q.options.forEach(opt => {
             const escapedOpt = opt.replace(/'/g, "\\'");
             optionsHTML += `<button onclick="selectOption('${escapedOpt}')">${opt}</button>`;
           });
           optionsHTML += "</div>";
+
           document.getElementById("chat").innerHTML += optionsHTML;
-          document.getElementById("chat").scrollTop = document.getElementById("chat").scrollHeight;
-        }, 1000);
+        }, 800);
       } else {
         askForEmail();
       }
@@ -215,67 +207,70 @@
       showUserMessage(option);
       answers.push(option);
       step++;
-      setTimeout(() => askNext(), 500);
+      setTimeout(() => askNext(), 400);
     }
 
+    /* ---------------------- Email Step ---------------------- */
     function askForEmail() {
       showLoading();
       setTimeout(() => {
         hideLoading();
         showBotMessage("Last thing — what’s the email you used to download your Real Brick Road™ booklet?<br><br>That’s how I’ll keep your answers linked to your record.");
+
         document.getElementById("chat").innerHTML += `
           <input id="emailInput" type="email" placeholder="Enter your email address" onkeydown="if(event.key==='Enter'){saveEmail();}">
         `;
         document.getElementById("emailInput").focus();
-      }, 1000);
+      }, 600);
     }
 
     function saveEmail() {
       const email = document.getElementById("emailInput").value.trim();
-      if (!email) {
-        alert("Please enter your email address.");
-        return;
-      }
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(email)) {
-        alert("Please enter a valid email address.");
+
+      if (!email) {
+        showBotMessage("⚠️ Please enter your email.");
         return;
       }
+      if (!emailRegex.test(email)) {
+        showBotMessage("⚠️ That email doesn’t look valid. Try again.");
+        return;
+      }
+
       userEmail = email;
       showUserMessage(email);
       document.getElementById("emailInput").remove();
+
       submitSurvey();
     }
 
+    /* ---------------------- Submit + Redirect ---------------------- */
     function submitSurvey() {
       showLoading();
-      const surveyData = { email: userEmail, answers: answers };
-      
+
+      const surveyData = { 
+        email: userEmail,
+        answers: answers 
+      };
+
+      // 🚀 FIRE AND FORGET — do not wait for app.py (backend can take 60s)
       fetch("/submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(surveyData)
       })
-      .then(r => r.json())
-      .then(() => {
-        hideLoading();
-        showBotMessage("✅ Angus has verified your record...");
-        showBotMessage("Redirecting you to your personal consultation page...");
-        
-        setTimeout(() => {
-          window.location.href = "https://therealbrickroad.com/booknow";
-        }, 2000);
-      })
-      .catch(err => {
-        hideLoading();
-        console.error('Error submitting survey:', err);
-        showBotMessage("❌ Network error occurred. Please try again.");
-      });
+      .catch(err => console.error("Background error:", err));
+
+      // INSTANT REDIRECT — cinematic + frictionless
+      setTimeout(() => {
+        window.location.href = "https://therealbrickroad.com/booknow";
+      }, 1200);
     }
 
+    /* ---------------------- Intro Message ---------------------- */
     window.onload = () => { 
-      showBotMessage("What's up, legend?! I'm ANGUS™ — the strategist behind the curtain of The Real Brick Road™. My job? To hand you the playbook that works every single time. All I need is a few gut-punch honest answers. Don't overthink it — just tap your choice and let's roll.");
-      setTimeout(() => askNext(), 2000);
+      showBotMessage("What's up, legend?! I'm ANGUS™ — the strategist behind the curtain of The Real Brick Road™. My job is simple: ask you six gut-punch honest questions and hand you a personalized path forward. No fluff. No pressure. Just clarity.<br><br>Ready?");
+      setTimeout(() => askNext(), 1800);
     }
   </script>
 </body>
