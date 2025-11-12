@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>ANGUS™ Survey Bot</title>
+  <title>ANGUS™ Survey Bot — Aqua Edition</title>
   <style>
     body { 
-      font-family: Arial, sans-serif; 
+      font-family: 'Inter', Arial, sans-serif; 
       background: #111; 
       color: #eee; 
       margin: 0; 
@@ -14,10 +14,10 @@
     .chat-box { 
       max-width: 600px; 
       margin: 50px auto; 
-      background: #222; 
+      background: #1a1a1a; 
       padding: 30px; 
       border-radius: 12px; 
-      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+      box-shadow: 0 4px 20px rgba(0,0,0,0.6);
     }
     .message { 
       margin: 15px 0; 
@@ -25,11 +25,11 @@
       animation: fadeIn 0.5s ease-in;
     }
     .bot { 
-      color: #0ff; 
+      color: #33E1FF; 
       font-weight: 500;
     }
     .user { 
-      color: #0f0; 
+      color: #00B4D8; 
       text-align: right; 
       font-weight: 500;
     }
@@ -41,44 +41,26 @@
       margin: 8px 0; 
       width: 100%; 
       padding: 12px 16px; 
-      border: none; 
+      border: 1px solid #33E1FF; 
       border-radius: 8px; 
-      background: #444; 
-      color: #fff; 
+      background: #222; 
+      color: #33E1FF; 
       cursor: pointer; 
       font-size: 14px;
       transition: all 0.3s ease;
       text-align: left;
     }
     .options button:hover {
-      background: #555;
+      background: #33E1FF;
+      color: #000;
       transform: translateY(-1px);
-      box-shadow: 0 2px 8px rgba(0,255,255,0.2);
+      box-shadow: 0 2px 8px rgba(51,225,255,0.3);
     }
     .options button:active {
       transform: translateY(0);
     }
-    input { 
-      width: 100%; 
-      padding: 12px; 
-      margin-top: 15px; 
-      border: 2px solid #444;
-      border-radius: 8px;
-      background: #333;
-      color: #fff;
-      font-size: 16px;
-      box-sizing: border-box;
-    }
-    input:focus {
-      outline: none;
-      border-color: #0ff;
-      box-shadow: 0 0 10px rgba(0,255,255,0.3);
-    }
-    input::placeholder {
-      color: #888;
-    }
     .completion {
-      background: linear-gradient(45deg, #0ff, #0aa);
+      background: linear-gradient(45deg, #33E1FF, #0094C6);
       color: #000;
       padding: 20px;
       border-radius: 8px;
@@ -92,17 +74,11 @@
       letter-spacing: 2px;
     }
     @keyframes fadeIn {
-      from {
-        opacity: 0;
-        transform: translateY(10px);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
     }
     .loading {
-      color: #0ff;
+      color: #33E1FF;
       font-style: italic;
     }
     .loading::after {
@@ -174,8 +150,6 @@
 
     let answers = [];
     let step = 0;
-    let currentEmail = '';
-    let currentPhone = '';
 
     function showBotMessage(msg) {
       const chatDiv = document.getElementById("chat");
@@ -197,9 +171,7 @@
 
     function hideLoading() {
       const loadingDiv = document.getElementById('loading');
-      if (loadingDiv) {
-        loadingDiv.remove();
-      }
+      if (loadingDiv) loadingDiv.remove();
     }
 
     function askNext() {
@@ -212,7 +184,6 @@
           
           let optionsHTML = "<div class='options'>";
           q.options.forEach(opt => {
-            // Escape quotes for onclick handler
             const escapedOpt = opt.replace(/'/g, "\\'");
             optionsHTML += `<button onclick="selectOption('${escapedOpt}')">${opt}</button>`;
           });
@@ -221,12 +192,11 @@
           document.getElementById("chat").scrollTop = document.getElementById("chat").scrollHeight;
         }, 1000);
       } else {
-        askForContact();
+        submitSurvey();
       }
     }
 
     function selectOption(option) {
-      // Remove all option buttons
       const optionDivs = document.querySelectorAll('.options');
       optionDivs.forEach(div => div.remove());
       
@@ -234,116 +204,33 @@
       answers.push(option);
       step++;
       
-      setTimeout(() => {
-        askNext();
-      }, 500);
-    }
-
-    function askForContact() {
-      showLoading();
-      setTimeout(() => {
-        hideLoading();
-        showBotMessage("Locked in! Last step — drop your best email:");
-        document.getElementById("chat").innerHTML += `<input id="emailInput" type="email" placeholder="Enter your email address" onkeydown="if(event.key==='Enter'){saveEmail();}" autofocus>`;
-        document.getElementById("emailInput").focus();
-      }, 1000);
-    }
-
-    function saveEmail() {
-      const email = document.getElementById("emailInput").value.trim();
-      if (!email) {
-        alert("Please enter a valid email address");
-        return;
-      }
-      
-      // Basic email validation
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(email)) {
-        alert("Please enter a valid email address");
-        return;
-      }
-      
-      currentEmail = email;
-      showUserMessage(email);
-      document.getElementById("emailInput").remove();
-
-      setTimeout(() => {
-        showBotMessage("And your phone number:");
-        document.getElementById("chat").innerHTML += `<input id="phoneInput" type="tel" placeholder="Enter your phone number" onkeydown="if(event.key==='Enter'){savePhone();}" autofocus>`;
-        document.getElementById("phoneInput").focus();
-      }, 500);
-    }
-
-    function savePhone() {
-      const phone = document.getElementById("phoneInput").value.trim();
-      if (!phone) {
-        alert("Please enter your phone number");
-        return;
-      }
-      
-      currentPhone = phone;
-      showUserMessage(phone);
-      document.getElementById("phoneInput").remove();
-
-      setTimeout(() => {
-        submitSurvey();
-      }, 500);
+      setTimeout(() => askNext(), 500);
     }
 
     function submitSurvey() {
       showLoading();
-      
-      const surveyData = {
-        email: currentEmail,
-        phone: currentPhone,
-        answers: answers
-      };
-
-      console.log('Submitting survey data:', surveyData);
-
+      const surveyData = { answers: answers };
       fetch("/submit", {
         method: "POST",
-        headers: { 
-          "Content-Type": "application/json" 
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(surveyData)
       })
-      .then(response => {
-        console.log('Response status:', response.status);
-        return response.json();
-      })
+      .then(r => r.json())
       .then(data => {
         hideLoading();
-        console.log('Response data:', data);
-        
-        if (data.legacy_code) {
-          const completionHTML = `
-            <div class='completion'>
-              <h2>🎉 Boom! You're officially in the game!</h2>
-              <div class='legacy-code'>Your Legacy Code™: <strong>${data.legacy_code}</strong></div>
-              <p>Your personalized roadmap is being crafted by ANGUS™. Check your email in the next few minutes!</p>
-              <p style="margin-top: 15px; font-size: 14px;">Keep this code handy — you'll need it to access your exclusive materials.</p>
-            </div>
-          `;
-          document.getElementById("chat").innerHTML += completionHTML;
-        } else {
-          showBotMessage("❌ Hmm, something went wrong. Can you try submitting again?");
-        }
+        showBotMessage("🎉 Boom! You’re officially in the game!");
+        showBotMessage("Your personalized roadmap is being crafted by ANGUS™. Check your inbox soon!");
       })
-      .catch(error => {
+      .catch(err => {
         hideLoading();
-        console.error('Error submitting survey:', error);
-        showBotMessage("❌ Network error occurred. Please check your connection and try again.");
+        console.error('Error submitting survey:', err);
+        showBotMessage("❌ Network error occurred. Please try again.");
       });
     }
 
-    // Start the flow when page loads
     window.onload = () => { 
       showBotMessage("What's up, legend?! I'm ANGUS™ — the strategist behind the curtain of The Real Brick Road™. My job? To hand you the playbook that works every single time. All I need is a few gut-punch honest answers. Don't overthink it — just tap your choice and let's roll.");
-      
-      setTimeout(() => {
-        askNext();
-      }, 2000);
+      setTimeout(() => askNext(), 2000);
     }
   </script>
 </body>
