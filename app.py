@@ -110,7 +110,7 @@ def choose_op_for_autonum(auto_num):
     op = users[idx]
     print(
         f"👤 Assigned OP (AutoNum={auto_num}): "
-        f"Legacy={op.get('legacy_code')} | GHL User ID={op.get('ghl_user_id')}"
+        f"Legacy={op.get('legacy_code')} | GHL User ID={op.get('ghl_user_id')} | Email={op.get('email')}"
     )
     return op
 
@@ -138,6 +138,8 @@ def create_prospect_record(email):
 
     assigned_op = choose_op_for_autonum(auto)
 
+    print("🔍 assigned_op dict:", assigned_op)
+
     fields_to_patch = {"Legacy Code": legacy_code}
     if assigned_op:
         if assigned_op.get("legacy_code"):
@@ -145,8 +147,10 @@ def create_prospect_record(email):
         if assigned_op.get("email"):
             fields_to_patch["Assigned Op Email"] = assigned_op["email"]
         if assigned_op.get("ghl_user_id"):
-            # 🔥 THIS IS THE FIELD IN YOUR PROSPECTS TABLE
+            # This should match the 'GHL User ID' field in Prospects
             fields_to_patch["GHL User ID"] = assigned_op["ghl_user_id"]
+
+    print("🧾 Patching Prospect with fields:", fields_to_patch)
 
     requests.patch(_url(HQ_TABLE, rec_id), headers=_h(), json={"fields": fields_to_patch})
 
@@ -167,7 +171,7 @@ def push_to_ghl(email, legacy_code, answers, record_id, assigned_op=None):
         payload = {
             "email": email,
             "locationId": GHL_LOCATION_ID,
-            "tags": ["rbr screening survey submitted"],  # ✅ TAG FIXED
+            "tags": ["rbr screening survey submitted"],
             "customField": {
                 "q1_reason_for_business": answers[0],
                 "q2_time_commitment": answers[1],
@@ -268,6 +272,14 @@ def submit():
         return jsonify({"error": str(e)}), 500
 
 # ---------------------------------------------------------
+# 4️⃣ Debug Route — See what the app sees from Users
+# ---------------------------------------------------------
+@app.route("/debug_users")
+def debug_users():
+    users = get_all_users()
+    return jsonify(users)
+
+# ---------------------------------------------------------
 # Basic Routes
 # ---------------------------------------------------------
 @app.route("/")
@@ -286,5 +298,5 @@ if __name__ == "__main__":
         print("❌ Missing Airtable environment variables.")
         exit(1)
 
-    print("🚀 Starting Angus Survey Bot (GHL User ID → Prospects + Tag Fix)")
+    print("🚀 Starting Angus Survey Bot (with /debug_users)")
     app.run(debug=True, host="0.0.0.0", port=5000)
