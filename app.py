@@ -4,6 +4,7 @@
 # - Stores Assigned Op Legacy Code + Email + GHL User ID on Prospect
 # - Pushes contact + survey answers + Legacy Code to GHL
 # - Uses assignedUserId so each Prospect is owned by the correct GHL user
+# - NEW: Adds tag "rbvr screening survey submitted" to the GHL contact
 
 from flask import Flask, render_template, request, jsonify
 import requests
@@ -39,32 +40,21 @@ GHL_BASE_URL = "https://rest.gohighlevel.com/v1"
 # Airtable Helpers
 # ---------------------------------------------------------
 def _h():
-    """Standard headers for Airtable API."""
     return {
         "Authorization": f"Bearer {AIRTABLE_API_KEY}",
         "Content-Type": "application/json",
     }
 
-
 def _url(table, record_id=None):
     base = f"https://api.airtable.com/v0/{BASE_ID}/{urllib.parse.quote(table)}"
     return f"{base}/{record_id}" if record_id else base
-
 
 # ---------------------------------------------------------
 # Users Table: Fetch + Round-Robin OP Selection
 # ---------------------------------------------------------
 def get_all_users():
-    """
-    Fetch all OP rows from Users table.
-    Expected fields per row:
-      - 'Legacy Code' (OP-level Legacy Code)
-      - 'GHL User ID'
-      - 'Assigned Op Email' or 'OP Email' or 'Email' (any one is fine)
-    """
     users = []
     offset = None
-
     try:
         while True:
             params = {}
@@ -100,15 +90,9 @@ def get_all_users():
 
 
 def choose_op_for_autonum(auto_num):
-    """
-    Round-robin OP assignment based on AutoNum.
-    - auto_num: integer Auto Number from Prospects table.
-    - Returns a dict with keys: legacy_code, ghl_user_id, email
-      or None if no Users are configured.
-    """
     users = get_all_users()
     if not users:
-        print("⚠️ No OP users found. Prospect will not be assigned to a specific OP.")
+        print("⚠️ No OP users found. Prospect will not be assigned.")
         return None
 
     try:
@@ -123,27 +107,16 @@ def choose_op_for_autonum(auto_num):
     )
     return op
 
-
 # ---------------------------------------------------------
-# 1️⃣ Create Prospect Record (Email + Legacy + Assigned OP)
+# 1️⃣ Create Prospect Record
 # ---------------------------------------------------------
 def create_prospect_record(email):
-    """
-    Create new Prospect with:
-      - Prospect Email
-      - Auto-generated Legacy Code (Legacy-X25-OP####)
-      - Assigned Op Legacy Code / Email / GHL User ID (round-robin)
-    Returns: (prospect_legacy_code, prospect_record_id, assigned_op_dict)
-    """
-
-    # 1. Create bare prospect with email
     payload = {"fields": {"Prospect Email": email}}
     r = requests.post(_url(HQ_TABLE), headers=_h(), json=payload)
     r.raise_for_status()
     rec = r.json()
     rec_id = rec["id"]
 
-    # 2. Ensure AutoNum is present
     auto = rec.get("fields", {}).get("AutoNum")
     if auto is None:
         r2 = requests.get(_url(HQ_TABLE, rec_id), headers=_h())
@@ -151,27 +124,20 @@ def create_prospect_record(email):
         auto = r2.json().get("fields", {}).get("AutoNum")
 
     if auto is None:
-        raise RuntimeError(
-            "AutoNum not found. Ensure Prospects has an Auto Number field named 'AutoNum'."
-        )
+        raise RuntimeError("AutoNum not found — ensure Prospects has AutoNum field.")
 
-    # 3. Generate Prospect Legacy Code
     code_num = 1000 + int(auto)
     prospect_legacy_code = f"Legacy-X25-OP{code_num}"
 
-    # 4. Choose OP (round-robin) based on AutoNum
     assigned_op = choose_op_for_autonum(auto)
 
-    # 5. Patch Prospect with Legacy Code + Assigned OP info
     fields_to_patch = {"Legacy Code": prospect_legacy_code}
-
     if assigned_op:
         if assigned_op.get("legacy_code"):
             fields_to_patch["Assigned Op Legacy Code"] = assigned_op["legacy_code"]
         if assigned_op.get("email"):
             fields_to_patch["Assigned Op Email"] = assigned_op["email"]
         if assigned_op.get("ghl_user_id"):
-            # This field is internal-only; Airtable will create it if it doesn't exist yet.
             fields_to_patch["Assigned Op GHL User ID"] = assigned_op["ghl_user_id"]
 
     requests.patch(_url(HQ_TABLE, rec_id), headers=_h(), json={"fields": fields_to_patch})
@@ -179,18 +145,13 @@ def create_prospect_record(email):
     print(f"🧱 Created Prospect {rec_id} with Legacy Code {prospect_legacy_code}")
     return prospect_legacy_code, rec_id, assigned_op
 
-
 # ---------------------------------------------------------
-# 2️⃣ Push Final Survey + Legacy Code to GHL
+# 2️⃣ Push to GHL — TAG ADDED HERE
 # ---------------------------------------------------------
 def push_to_ghl(email, prospect_legacy_code, answers, record_id, assigned_op=None):
     """
-    Push contact + survey answers + prospect legacy code to GoHighLevel.
-      - email: prospect email
-      - prospect_legacy_code: unique code per prospect (Legacy-X25-OP####)
-      - answers: list of 6 answers
-      - record_id: Airtable Prospect record id
-      - assigned_op: dict with 'ghl_user_id' (optional)
+    Push data to GoHighLevel, INCLUDING TAG:
+        rbr screening survey submitted
     """
 
     try:
@@ -203,6 +164,7 @@ def push_to_ghl(email, prospect_legacy_code, answers, record_id, assigned_op=Non
         payload = {
             "email": email,
             "locationId": GHL_LOCATION_ID,
+            "tags": ["rbvr screening survey submitted"],  #  ⭐ NEW TAG ADDED HERE
             "customField": {
                 "q1_reason_for_business": answers[0],
                 "q2_time_commitment": answers[1],
@@ -222,7 +184,7 @@ def push_to_ghl(email, prospect_legacy_code, answers, record_id, assigned_op=Non
             payload["assignedUserId"] = assigned_user_id
             print(f"📌 Sending to GHL with assignedUserId={assigned_user_id}")
         else:
-            print("⚠️ No assignedUserId found — contact will not be attached to a specific GHL user.")
+            print("⚠️ No assignedUserId — GHL contact will not be owned.")
 
         r = requests.post(url, headers=headers, json=payload)
 
@@ -252,11 +214,10 @@ def push_to_ghl(email, prospect_legacy_code, answers, record_id, assigned_op=Non
                 json={"fields": {"Sync Status": err}},
             )
         except Exception as inner_e:
-            print(f"⚠️ Also failed to update Sync Status in Airtable: {inner_e}")
-
+            print(f"⚠️ Could not update sync status: {inner_e}")
 
 # ---------------------------------------------------------
-# 3️⃣ Submit Route (Main Angus Logic)
+# 3️⃣ Submit Route
 # ---------------------------------------------------------
 @app.route("/submit", methods=["POST"])
 def submit():
@@ -270,14 +231,11 @@ def submit():
         if not email:
             return jsonify({"error": "Missing email"}), 400
 
-        # Ensure we always have 6 answers
         while len(answers) < 6:
             answers.append("No response provided")
 
-        # 1. Create Prospect + Legacy Code + Assigned OP
         prospect_legacy_code, prospect_id, assigned_op = create_prospect_record(email)
 
-        # 2. Save survey responses into Survey Responses table
         survey_payload = {
             "fields": {
                 "Date Submitted": datetime.datetime.now().isoformat(),
@@ -294,16 +252,13 @@ def submit():
 
         r3 = requests.post(_url(RESPONSES_TABLE), headers=_h(), json=survey_payload)
         if r3.status_code == 200:
-            print("✅ Survey responses saved to Airtable")
+            print("✅ Survey responses saved.")
         else:
-            print(f"❌ Error saving survey responses: {r3.status_code} {r3.text}")
+            print(f"❌ Error saving responses: {r3.status_code} {r3.text}")
 
-        # 3. Background delay before syncing to GHL
-        #    (User has already been redirected to booking page)
-        print("⏱ Waiting 60 seconds before pushing to GHL...")
+        print("⏱ Waiting 60 seconds before GHL sync...")
         time.sleep(60)
 
-        # 4. Final sync to GHL
         push_to_ghl(email, prospect_legacy_code, answers, prospect_id, assigned_op)
 
         return jsonify({"status": "ok", "legacy_code": prospect_legacy_code})
@@ -312,7 +267,6 @@ def submit():
         print(f"🔥 Error in /submit: {e}")
         return jsonify({"error": str(e)}), 500
 
-
 # ---------------------------------------------------------
 # Basic Routes
 # ---------------------------------------------------------
@@ -320,11 +274,9 @@ def submit():
 def index():
     return render_template("chat.html")
 
-
 @app.route("/health")
 def health():
     return jsonify({"status": "healthy"})
-
 
 # ---------------------------------------------------------
 # Run Server
@@ -334,5 +286,5 @@ if __name__ == "__main__":
         print("❌ Missing Airtable env vars — cannot start.")
         exit(1)
 
-    print("🚀 Starting Angus Survey Bot (Elite OP Routing Version)")
+    print("🚀 Starting Angus Survey Bot (Elite OP Routing + Tag Version)")
     app.run(debug=True, host="0.0.0.0", port=5000)
