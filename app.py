@@ -4,7 +4,7 @@
 # - Stores Assigned Op Legacy Code + Email + GHL User ID on Prospect
 # - Pushes contact + survey answers + Legacy Code to GHL
 # - Uses assignedUserId so each Prospect is owned by the correct GHL user
-# - TAG FIXED: "rbr screening survey submitted"
+# - TAG: "rbr screening survey submitted"
 
 from flask import Flask, render_template, request, jsonify
 import requests
@@ -58,7 +58,7 @@ def get_all_users():
     Requires fields:
       - Legacy Code
       - GHL User ID
-      - Assigned Op Email (optional)
+      - Assigned Op Email / OP Email / Email
     """
     users = []
     offset = None
@@ -96,7 +96,7 @@ def get_all_users():
 
 
 def choose_op_for_autonum(auto_num):
-    """Select an OP in round-robin order."""
+    """Select an OP in round-robin order based on AutoNum."""
     users = get_all_users()
     if not users:
         print("⚠️ No OP users in Users table.")
@@ -145,7 +145,8 @@ def create_prospect_record(email):
         if assigned_op.get("email"):
             fields_to_patch["Assigned Op Email"] = assigned_op["email"]
         if assigned_op.get("ghl_user_id"):
-            fields_to_patch["Assigned Op GHL User ID"] = assigned_op["ghl_user_id"]
+            # 🔥 THIS IS THE FIELD IN YOUR PROSPECTS TABLE
+            fields_to_patch["GHL User ID"] = assigned_op["ghl_user_id"]
 
     requests.patch(_url(HQ_TABLE, rec_id), headers=_h(), json={"fields": fields_to_patch})
 
@@ -153,7 +154,7 @@ def create_prospect_record(email):
     return legacy_code, rec_id, assigned_op
 
 # ---------------------------------------------------------
-# 2️⃣ Push to GHL (Tag Fixed)
+# 2️⃣ Push to GHL (Tag + assignment)
 # ---------------------------------------------------------
 def push_to_ghl(email, legacy_code, answers, record_id, assigned_op=None):
     try:
@@ -166,7 +167,7 @@ def push_to_ghl(email, legacy_code, answers, record_id, assigned_op=None):
         payload = {
             "email": email,
             "locationId": GHL_LOCATION_ID,
-            "tags": ["rbr screening survey submitted"],  # ⭐ TAG FIXED
+            "tags": ["rbr screening survey submitted"],  # ✅ TAG FIXED
             "customField": {
                 "q1_reason_for_business": answers[0],
                 "q2_time_commitment": answers[1],
@@ -285,6 +286,5 @@ if __name__ == "__main__":
         print("❌ Missing Airtable environment variables.")
         exit(1)
 
-    print("🚀 Starting Angus Survey Bot (Tag Fix Applied)")
+    print("🚀 Starting Angus Survey Bot (GHL User ID → Prospects + Tag Fix)")
     app.run(debug=True, host="0.0.0.0", port=5000)
-
