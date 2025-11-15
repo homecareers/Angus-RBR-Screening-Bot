@@ -4,7 +4,7 @@
 # - Stores Assigned Op Legacy Code + Email + GHL User ID on Prospect
 # - Pushes contact + survey answers + Legacy Code to GHL
 # - Uses assignedUserId so each Prospect is owned by the correct GHL user
-# - NEW: Adds tag "rbvr screening survey submitted" to the GHL contact
+# - TAG FIXED: "rbr screening survey submitted"
 
 from flask import Flask, render_template, request, jsonify
 import requests
@@ -50,17 +50,21 @@ def _url(table, record_id=None):
     return f"{base}/{record_id}" if record_id else base
 
 # ---------------------------------------------------------
-# Users Table: Fetch + Round-Robin OP Selection
+# Users Table: Fetch + Round-Robin OP Assignment
 # ---------------------------------------------------------
 def get_all_users():
+    """
+    Loads operator rows from Users table.
+    Requires fields:
+      - Legacy Code
+      - GHL User ID
+      - Assigned Op Email (optional)
+    """
     users = []
     offset = None
     try:
         while True:
-            params = {}
-            if offset:
-                params["offset"] = offset
-
+            params = {"offset": offset} if offset else {}
             r = requests.get(_url(USERS_TABLE), headers=_h(), params=params)
             r.raise_for_status()
             data = r.json()
@@ -72,9 +76,11 @@ def get_all_users():
                         "record_id": rec.get("id"),
                         "legacy_code": fields.get("Legacy Code"),
                         "ghl_user_id": fields.get("GHL User ID"),
-                        "email": fields.get("Assigned Op Email")
-                        or fields.get("OP Email")
-                        or fields.get("Email"),
+                        "email": (
+                            fields.get("Assigned Op Email")
+                            or fields.get("OP Email")
+                            or fields.get("Email")
+                        ),
                     }
                 )
 
@@ -85,14 +91,15 @@ def get_all_users():
     except Exception as e:
         print(f"⚠️ Error loading Users table: {e}")
 
-    print(f"👥 Loaded {len(users)} OP user(s) from Users table.")
+    print(f"👥 Loaded {len(users)} OP user(s).")
     return users
 
 
 def choose_op_for_autonum(auto_num):
+    """Select an OP in round-robin order."""
     users = get_all_users()
     if not users:
-        print("⚠️ No OP users found. Prospect will not be assigned.")
+        print("⚠️ No OP users in Users table.")
         return None
 
     try:
@@ -102,8 +109,8 @@ def choose_op_for_autonum(auto_num):
 
     op = users[idx]
     print(
-        f"👤 Assigned OP for AutoNum {auto_num}: "
-        f"Legacy={op.get('legacy_code')}, GHL User ID={op.get('ghl_user_id')}, Email={op.get('email')}"
+        f"👤 Assigned OP (AutoNum={auto_num}): "
+        f"Legacy={op.get('legacy_code')} | GHL User ID={op.get('ghl_user_id')}"
     )
     return op
 
@@ -124,14 +131,14 @@ def create_prospect_record(email):
         auto = r2.json().get("fields", {}).get("AutoNum")
 
     if auto is None:
-        raise RuntimeError("AutoNum not found — ensure Prospects has AutoNum field.")
+        raise RuntimeError("AutoNum missing from Prospects table.")
 
     code_num = 1000 + int(auto)
-    prospect_legacy_code = f"Legacy-X25-OP{code_num}"
+    legacy_code = f"Legacy-X25-OP{code_num}"
 
     assigned_op = choose_op_for_autonum(auto)
 
-    fields_to_patch = {"Legacy Code": prospect_legacy_code}
+    fields_to_patch = {"Legacy Code": legacy_code}
     if assigned_op:
         if assigned_op.get("legacy_code"):
             fields_to_patch["Assigned Op Legacy Code"] = assigned_op["legacy_code"]
@@ -142,18 +149,13 @@ def create_prospect_record(email):
 
     requests.patch(_url(HQ_TABLE, rec_id), headers=_h(), json={"fields": fields_to_patch})
 
-    print(f"🧱 Created Prospect {rec_id} with Legacy Code {prospect_legacy_code}")
-    return prospect_legacy_code, rec_id, assigned_op
+    print(f"🧱 Created Prospect {rec_id} with Legacy Code {legacy_code}")
+    return legacy_code, rec_id, assigned_op
 
 # ---------------------------------------------------------
-# 2️⃣ Push to GHL — TAG ADDED HERE
+# 2️⃣ Push to GHL (Tag Fixed)
 # ---------------------------------------------------------
-def push_to_ghl(email, prospect_legacy_code, answers, record_id, assigned_op=None):
-    """
-    Push data to GoHighLevel, INCLUDING TAG:
-        rbr screening survey submitted
-    """
-
+def push_to_ghl(email, legacy_code, answers, record_id, assigned_op=None):
     try:
         url = f"{GHL_BASE_URL}/contacts"
         headers = {
@@ -164,7 +166,7 @@ def push_to_ghl(email, prospect_legacy_code, answers, record_id, assigned_op=Non
         payload = {
             "email": email,
             "locationId": GHL_LOCATION_ID,
-            "tags": ["rbvr screening survey submitted"],  #  ⭐ NEW TAG ADDED HERE
+            "tags": ["rbr screening survey submitted"],  # ⭐ TAG FIXED
             "customField": {
                 "q1_reason_for_business": answers[0],
                 "q2_time_commitment": answers[1],
@@ -172,24 +174,20 @@ def push_to_ghl(email, prospect_legacy_code, answers, record_id, assigned_op=Non
                 "q4_startup_readiness": answers[3],
                 "q5_confidence_level": answers[4],
                 "q6_business_style_gem": answers[5],
-                "legacy_code_id": prospect_legacy_code,
+                "legacy_code_id": legacy_code,
             },
         }
 
-        assigned_user_id = None
-        if assigned_op:
-            assigned_user_id = assigned_op.get("ghl_user_id")
-
-        if assigned_user_id:
-            payload["assignedUserId"] = assigned_user_id
-            print(f"📌 Sending to GHL with assignedUserId={assigned_user_id}")
+        if assigned_op and assigned_op.get("ghl_user_id"):
+            payload["assignedUserId"] = assigned_op["ghl_user_id"]
+            print(f"📌 GHL assignedUserId = {assigned_op['ghl_user_id']}")
         else:
-            print("⚠️ No assignedUserId — GHL contact will not be owned.")
+            print("⚠️ No GHL User ID found for OP. Contact will be unassigned.")
 
         r = requests.post(url, headers=headers, json=payload)
 
         if r.status_code == 200:
-            print("✅ Successfully synced contact to GHL")
+            print("✅ Synced to GHL")
             requests.patch(
                 _url(HQ_TABLE, record_id),
                 headers=_h(),
@@ -213,8 +211,8 @@ def push_to_ghl(email, prospect_legacy_code, answers, record_id, assigned_op=Non
                 headers=_h(),
                 json={"fields": {"Sync Status": err}},
             )
-        except Exception as inner_e:
-            print(f"⚠️ Could not update sync status: {inner_e}")
+        except:
+            pass
 
 # ---------------------------------------------------------
 # 3️⃣ Submit Route
@@ -223,7 +221,7 @@ def push_to_ghl(email, prospect_legacy_code, answers, record_id, assigned_op=Non
 def submit():
     try:
         data = request.json or {}
-        print("📩 Incoming Data:", data)
+        print("📩 Incoming:", data)
 
         email = (data.get("email") or "").strip()
         answers = data.get("answers", [])
@@ -234,12 +232,12 @@ def submit():
         while len(answers) < 6:
             answers.append("No response provided")
 
-        prospect_legacy_code, prospect_id, assigned_op = create_prospect_record(email)
+        legacy_code, prospect_id, assigned_op = create_prospect_record(email)
 
         survey_payload = {
             "fields": {
                 "Date Submitted": datetime.datetime.now().isoformat(),
-                "Legacy Code": prospect_legacy_code,
+                "Legacy Code": legacy_code,
                 "Q1 Reason for Business": answers[0],
                 "Q2 Time Commitment": answers[1],
                 "Q3 Business Experience": answers[2],
@@ -251,17 +249,18 @@ def submit():
         }
 
         r3 = requests.post(_url(RESPONSES_TABLE), headers=_h(), json=survey_payload)
+
         if r3.status_code == 200:
-            print("✅ Survey responses saved.")
+            print("✅ Survey responses saved")
         else:
-            print(f"❌ Error saving responses: {r3.status_code} {r3.text}")
+            print(f"❌ Airtable error: {r3.status_code} {r3.text}")
 
         print("⏱ Waiting 60 seconds before GHL sync...")
         time.sleep(60)
 
-        push_to_ghl(email, prospect_legacy_code, answers, prospect_id, assigned_op)
+        push_to_ghl(email, legacy_code, answers, prospect_id, assigned_op)
 
-        return jsonify({"status": "ok", "legacy_code": prospect_legacy_code})
+        return jsonify({"status": "ok", "legacy_code": legacy_code})
 
     except Exception as e:
         print(f"🔥 Error in /submit: {e}")
@@ -283,8 +282,9 @@ def health():
 # ---------------------------------------------------------
 if __name__ == "__main__":
     if not AIRTABLE_API_KEY or not AIRTABLE_BASE_ID:
-        print("❌ Missing Airtable env vars — cannot start.")
+        print("❌ Missing Airtable environment variables.")
         exit(1)
 
-    print("🚀 Starting Angus Survey Bot (Elite OP Routing + Tag Version)")
+    print("🚀 Starting Angus Survey Bot (Tag Fix Applied)")
     app.run(debug=True, host="0.0.0.0", port=5000)
+
