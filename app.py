@@ -1,10 +1,11 @@
-# === ANGUS™ Survey Bot — Retrieves GHL User ID & User Email (with Enhanced Debugging) ===
+# === ANGUS™ Survey Bot — Clean Version (No User Email Lookup) ===
 # - Creates Prospect with unique Legacy Code
 # - Searches for existing GHL contact by email
-# - Retrieves the contact's assigned user ID AND user email from GHL
-# - Stores both in Airtable Prospects table
-# - Updates GHL contact with survey answers and tag
+# - Retrieves the contact’s assigned GHL User ID
+# - Stores that GHL User ID in Airtable Prospects
+# - Updates GHL contact with survey answers + tag
 # - Adds tag: "rbr screening survey submitted"
+# - NO USER EMAIL LOOKUP ANYWHERE
 
 from flask import Flask, render_template, request, jsonify
 import requests
@@ -56,14 +57,14 @@ def create_prospect_record(email):
       - Prospect Email
       - Auto-generated Legacy Code (Legacy-X25-OP####)
     """
-    # 1. Create prospect with email
+
     payload = {"fields": {"Prospect Email": email}}
     r = requests.post(_url(HQ_TABLE), headers=_h(), json=payload)
     r.raise_for_status()
     rec = r.json()
     rec_id = rec["id"]
 
-    # 2. Get AutoNum
+    # Get AutoNum
     auto = rec.get("fields", {}).get("AutoNum")
     if auto is None:
         r2 = requests.get(_url(HQ_TABLE, rec_id), headers=_h())
@@ -73,45 +74,43 @@ def create_prospect_record(email):
     if auto is None:
         raise RuntimeError("AutoNum missing from Prospects table.")
 
-    # 3. Generate Prospect Legacy Code
+    # Generate Legacy Code
     code_num = 1000 + int(auto)
     legacy_code = f"Legacy-X25-OP{code_num}"
 
-    # 4. Update Prospect with Legacy Code
+    # Store Legacy Code
     requests.patch(
-        _url(HQ_TABLE, rec_id), 
-        headers=_h(), 
-        json={"fields": {"Legacy Code": legacy_code}}
+        _url(HQ_TABLE, rec_id),
+        headers=_h(),
+        json={"fields": {"Legacy Code": legacy_code}},
     )
 
     print(f"🧱 Created Prospect {rec_id} with Legacy Code {legacy_code}")
     return legacy_code, rec_id
 
 # ---------------------------------------------------------
-# 2️⃣ Push to GHL (Retrieve User ID & Email, Update Contact)
+# 2️⃣ Push to GHL (User ID Only)
 # ---------------------------------------------------------
 def push_to_ghl(email, legacy_code, answers, record_id):
     """
-    Find existing contact in GHL, retrieve their assigned user ID and user's email, 
-    store both in Airtable, and update contact with survey data.
+    Look up existing GHL contact → get assigned GHL User ID → store ID in Airtable.
+    Then update contact with survey answers + tag.
     """
+
     try:
         headers = {
             "Authorization": f"Bearer {GHL_API_KEY}",
             "Content-Type": "application/json",
         }
-        
-        # 1. Search for existing contact by email
-        search_url = f"{GHL_BASE_URL}/contacts/lookup"
-        search_params = {
-            "email": email,
-            "locationId": GHL_LOCATION_ID
-        }
-        
-        search_response = requests.get(search_url, headers=headers, params=search_params)
-        
-        if search_response.status_code != 200:
-            err = f"❌ Could not find contact with email {email}"
+
+        # 1. Look up existing contact
+        lookup_url = f"{GHL_BASE_URL}/contacts/lookup"
+        lookup_params = {"email": email, "locationId": GHL_LOCATION_ID}
+
+        lookup_resp = requests.get(lookup_url, headers=headers, params=lookup_params)
+
+        if lookup_resp.status_code != 200:
+            err = f"❌ GHL lookup failed for email {email}"
             print(err)
             requests.patch(
                 _url(HQ_TABLE, record_id),
@@ -119,98 +118,42 @@ def push_to_ghl(email, legacy_code, answers, record_id):
                 json={"fields": {"Sync Status": err}},
             )
             return
-            
-        contact_data = search_response.json()
-        print(f"🔍 GHL Contact Data: {contact_data}")
-        
-        # Extract contact details
-        if 'contacts' in contact_data and len(contact_data['contacts']) > 0:
-            contact = contact_data['contacts'][0]
-        elif 'contact' in contact_data:
-            contact = contact_data['contact']
+
+        contact_data = lookup_resp.json()
+
+        # Extract contact
+        if "contacts" in contact_data and contact_data["contacts"]:
+            contact = contact_data["contacts"][0]
+        elif "contact" in contact_data:
+            contact = contact_data["contact"]
         else:
             contact = contact_data
-            
-        ghl_contact_id = contact.get('id')
-        existing_user_id = (
-            contact.get('assignedUserId') or 
-            contact.get('userId') or 
-            contact.get('assignedTo') or
-            contact.get('assigned_user_id')
+
+        ghl_contact_id = contact.get("id")
+
+        # Extract only user ID
+        assigned_user_id = (
+            contact.get("assignedUserId")
+            or contact.get("userId")
+            or contact.get("assignedTo")
+            or contact.get("assigned_user_id")
         )
-        
-        print(f"📌 Found GHL contact: {ghl_contact_id}")
-        print(f"👤 Contact's assigned user ID: {existing_user_id}")
-        
-        # 2. If we have a user ID, get the user's details
-        user_email = None
-        if existing_user_id:
-            try:
-                # Try the users endpoint with location ID as a parameter
-                user_url = f"{GHL_BASE_URL}/users/{existing_user_id}"
-                print(f"🔍 Attempting to fetch user from: {user_url}")
-                
-                # Add location ID to headers or params
-                user_params = {"locationId": GHL_LOCATION_ID}
-                user_response = requests.get(user_url, headers=headers, params=user_params)
-                
-                print(f"📊 User API Status Code: {user_response.status_code}")
-                print(f"📊 User API Response: {user_response.text[:500]}")  # First 500 chars
-                
-                if user_response.status_code == 200:
-                    user_data = user_response.json()
-                    print(f"🔍 Full User Data Structure: {user_data}")
-                    
-                    # Try multiple possible paths to find the email
-                    user_email = (
-                        user_data.get('email') or 
-                        user_data.get('user', {}).get('email') or
-                        user_data.get('userEmail') or
-                        user_data.get('users', {}).get('email') or
-                        user_data.get('data', {}).get('email')
-                    )
-                    
-                    # If still no email, print all keys to see structure
-                    if not user_email:
-                        print(f"⚠️ Could not find email in user data. Available keys: {user_data.keys()}")
-                    else:
-                        print(f"📧 Found user email: {user_email}")
-                        
-                elif user_response.status_code == 404:
-                    print(f"❌ User not found with ID: {existing_user_id}")
-                elif user_response.status_code == 401:
-                    print(f"❌ Unauthorized to access user data")
-                else:
-                    print(f"❌ User API error: {user_response.status_code} - {user_response.text}")
-                    
-            except Exception as e:
-                print(f"❌ Exception fetching user details: {str(e)}")
-        
-        # 3. Update Airtable with both GHL User ID and Assigned Op Email
-        airtable_updates = {}
-        
-        if existing_user_id:
-            airtable_updates["GHL User ID"] = existing_user_id
-            print(f"💾 Storing GHL User ID: {existing_user_id}")
-            
-        if user_email:
-            airtable_updates["Assigned Op Email"] = user_email
-            print(f"💾 Storing Assigned Op Email: {user_email}")
-        else:
-            print("⚠️ No email found for user, only storing User ID")
-            
-        if airtable_updates:
+
+        print(f"📌 Found GHL Contact ID: {ghl_contact_id}")
+        print(f"👤 Assigned User ID: {assigned_user_id}")
+
+        # 2. Store ONLY the GHL User ID (no email)
+        if assigned_user_id:
             requests.patch(
                 _url(HQ_TABLE, record_id),
                 headers=_h(),
-                json={"fields": airtable_updates},
+                json={"fields": {"GHL User ID": assigned_user_id}},
             )
         else:
-            print("⚠️ No user information found for this contact in GHL")
-        
-        # 4. Update the GHL contact with survey answers and tag
+            print("⚠️ Contact has no assignedUserId")
+
+        # 3. Update GHL contact with survey answers + tag
         update_url = f"{GHL_BASE_URL}/contacts/{ghl_contact_id}"
-        
         update_payload = {
             "tags": ["rbr screening survey submitted"],
             "customField": {
@@ -223,25 +166,25 @@ def push_to_ghl(email, legacy_code, answers, record_id):
                 "legacy_code_id": legacy_code,
             },
         }
-        
-        r = requests.put(update_url, headers=headers, json=update_payload)
-        
-        if r.status_code == 200:
-            print("✅ Updated contact in GHL with survey data")
+
+        update_resp = requests.put(update_url, headers=headers, json=update_payload)
+
+        if update_resp.status_code == 200:
+            print("✅ GHL contact updated with survey + tag")
             requests.patch(
                 _url(HQ_TABLE, record_id),
                 headers=_h(),
                 json={"fields": {"Sync Status": "✅ Synced to GHL"}},
             )
         else:
-            err = f"❌ GHL Update Error {r.status_code}: {r.text}"
+            err = f"❌ GHL Update Error {update_resp.status_code}: {update_resp.text}"
             print(err)
             requests.patch(
                 _url(HQ_TABLE, record_id),
                 headers=_h(),
                 json={"fields": {"Sync Status": err}},
             )
-            
+
     except Exception as e:
         err = f"❌ Exception during GHL sync: {str(e)}"
         print(err)
@@ -266,14 +209,14 @@ def submit():
         if not email:
             return jsonify({"error": "Missing email"}), 400
 
-        # Ensure always 6 answers
+        # Ensure 6 answers
         while len(answers) < 6:
             answers.append("No response provided")
 
-        # 1. Create Prospect with Legacy Code
+        # 1. Create Prospect
         legacy_code, prospect_id = create_prospect_record(email)
 
-        # 2. Save survey responses into Survey Responses table
+        # 2. Save Survey Responses
         survey_payload = {
             "fields": {
                 "Date Submitted": datetime.datetime.now().isoformat(),
@@ -293,13 +236,13 @@ def submit():
         if r3.status_code == 200:
             print("✅ Survey responses saved")
         else:
-            print(f"❌ Airtable error saving survey responses: {r3.status_code} {r3.text}")
+            print(f"❌ Airtable save error: {r3.status_code} {r3.text}")
 
-        # 3. Background delay before syncing to GHL
+        # 3. Background sync
         print("⏱ Waiting 60 seconds before GHL sync...")
         time.sleep(60)
 
-        # 4. Final sync to GHL (will retrieve and store both User ID and Email)
+        # 4. Update GHL
         push_to_ghl(email, legacy_code, answers, prospect_id)
 
         return jsonify({"status": "ok", "legacy_code": legacy_code})
@@ -309,55 +252,21 @@ def submit():
         return jsonify({"error": str(e)}), 500
 
 # ---------------------------------------------------------
-# 4️⃣ Debug Routes
+# Debug Routes
 # ---------------------------------------------------------
 @app.route("/debug_contact/<email>")
 def debug_contact(email):
-    """Debug route to test GHL contact lookup"""
     try:
         headers = {
             "Authorization": f"Bearer {GHL_API_KEY}",
             "Content-Type": "application/json",
         }
-        
-        search_url = f"{GHL_BASE_URL}/contacts/lookup"
-        search_params = {
-            "email": email,
-            "locationId": GHL_LOCATION_ID
-        }
-        
-        response = requests.get(search_url, headers=headers, params=search_params)
-        
-        if response.status_code == 200:
-            return jsonify(response.json())
-        else:
-            return jsonify({"error": f"Status {response.status_code}", "text": response.text})
+        lookup_url = f"{GHL_BASE_URL}/contacts/lookup"
+        params = {"email": email, "locationId": GHL_LOCATION_ID}
+        resp = requests.get(lookup_url, headers=headers, params=params)
+        return jsonify(resp.json())
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@app.route("/debug_user/<user_id>")
-def debug_user(user_id):
-    """Debug route to test GHL user lookup"""
-    try:
-        headers = {
-            "Authorization": f"Bearer {GHL_API_KEY}",
-            "Content-Type": "application/json",
-        }
-        
-        user_url = f"{GHL_BASE_URL}/users/{user_id}"
-        user_params = {"locationId": GHL_LOCATION_ID}
-        response = requests.get(user_url, headers=headers, params=user_params)
-        
-        print(f"Debug User URL: {user_url}")
-        print(f"Debug User Status: {response.status_code}")
-        print(f"Debug User Response: {response.text[:1000]}")
-        
-        if response.status_code == 200:
-            return jsonify(response.json())
-        else:
-            return jsonify({"error": f"Status {response.status_code}", "text": response.text})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": str(e)})
 
 # ---------------------------------------------------------
 # Basic Routes
@@ -375,12 +284,12 @@ def health():
 # ---------------------------------------------------------
 if __name__ == "__main__":
     if not AIRTABLE_API_KEY or not AIRTABLE_BASE_ID:
-        print("❌ Missing Airtable environment variables.")
+        print("❌ Missing Airtable env vars.")
         exit(1)
 
     if not GHL_API_KEY or not GHL_LOCATION_ID:
-        print("❌ Missing GHL environment variables.")
+        print("❌ Missing GHL env vars.")
         exit(1)
 
-    print("🚀 Starting Angus Survey Bot (User ID + Email Retrieval with Debugging)")
+    print("🚀 Starting Angus Survey Bot (Clean Version — ID Only)")
     app.run(debug=True, host="0.0.0.0", port=5000)
