@@ -384,10 +384,3 @@ if __name__ == "__main__":
 
     print("🚀 Starting Angus Survey Bot (User ID + Email Retrieval with Debugging)")
     app.run(debug=True, host="0.0.0.0", port=5000)
-```
-
-This is the complete code with all debugging enhancements. Once you run this, check your logs to see what's happening with the user API call. 
-
-You can also test the user lookup directly by visiting:
-```
-http://yourdomain.com/debug_user/GuLT4HQ2ZrHDb9sGaUko
