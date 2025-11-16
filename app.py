@@ -1,10 +1,11 @@
-# === ANGUS™ Survey Bot — Elite OP Routing Version ===
+# === ANGUS™ Survey Bot — Elite OP Routing (ID-Only Version) ===
 # - Creates Prospect with unique Legacy Code
-# - Automatically assigns an OP using Users table (round-robin)
-# - Stores Assigned Op Legacy Code + Email + GHL User ID on Prospect
+# - Automatically assigns an OP using Users table (round-robin via AutoNum)
+# - Stores Prospect Legacy Code + Assigned Op Legacy Code + GHL User ID on Prospect
 # - Pushes contact + survey answers + Legacy Code to GHL
 # - Uses assignedUserId so each Prospect is owned by the correct GHL user
-# - TAG: "rbr screening survey submitted"
+# - Adds tag: "rbr screening survey submitted"
+# - NO OP EMAIL LOGIC (ID-only routing)
 
 from flask import Flask, render_template, request, jsonify
 import requests
@@ -58,7 +59,7 @@ def get_all_users():
     Requires fields:
       - Legacy Code
       - GHL User ID
-      - Assigned Op Email / OP Email / Email
+    Email is intentionally ignored (ID-only routing).
     """
     users = []
     offset = None
@@ -76,11 +77,6 @@ def get_all_users():
                         "record_id": rec.get("id"),
                         "legacy_code": fields.get("Legacy Code"),
                         "ghl_user_id": fields.get("GHL User ID"),
-                        "email": (
-                            fields.get("Assigned Op Email")
-                            or fields.get("OP Email")
-                            or fields.get("Email")
-                        ),
                     }
                 )
 
@@ -110,7 +106,7 @@ def choose_op_for_autonum(auto_num):
     op = users[idx]
     print(
         f"👤 Assigned OP (AutoNum={auto_num}): "
-        f"Legacy={op.get('legacy_code')} | GHL User ID={op.get('ghl_user_id')} | Email={op.get('email')}"
+        f"Legacy={op.get('legacy_code')} | GHL User ID={op.get('ghl_user_id')}"
     )
     return op
 
@@ -118,12 +114,21 @@ def choose_op_for_autonum(auto_num):
 # 1️⃣ Create Prospect Record
 # ---------------------------------------------------------
 def create_prospect_record(email):
+    """
+    Create a new Prospect with:
+      - Prospect Email
+      - Auto-generated Legacy Code (Legacy-X25-OP####)
+      - Assigned Op Legacy Code
+      - GHL User ID of assigned OP
+    """
+    # 1. Create bare prospect with email
     payload = {"fields": {"Prospect Email": email}}
     r = requests.post(_url(HQ_TABLE), headers=_h(), json=payload)
     r.raise_for_status()
     rec = r.json()
     rec_id = rec["id"]
 
+    # 2. Ensure AutoNum is present
     auto = rec.get("fields", {}).get("AutoNum")
     if auto is None:
         r2 = requests.get(_url(HQ_TABLE, rec_id), headers=_h())
@@ -133,21 +138,21 @@ def create_prospect_record(email):
     if auto is None:
         raise RuntimeError("AutoNum missing from Prospects table.")
 
+    # 3. Generate Prospect Legacy Code
     code_num = 1000 + int(auto)
     legacy_code = f"Legacy-X25-OP{code_num}"
 
+    # 4. Choose OP based on AutoNum (round-robin)
     assigned_op = choose_op_for_autonum(auto)
-
     print("🔍 assigned_op dict:", assigned_op)
 
+    # 5. Patch Prospect with Legacy Code + Assigned OP info
     fields_to_patch = {"Legacy Code": legacy_code}
+
     if assigned_op:
         if assigned_op.get("legacy_code"):
             fields_to_patch["Assigned Op Legacy Code"] = assigned_op["legacy_code"]
-        if assigned_op.get("email"):
-            fields_to_patch["Assigned Op Email"] = assigned_op["email"]
         if assigned_op.get("ghl_user_id"):
-            # This should match the 'GHL User ID' field in Prospects
             fields_to_patch["GHL User ID"] = assigned_op["ghl_user_id"]
 
     print("🧾 Patching Prospect with fields:", fields_to_patch)
@@ -161,6 +166,10 @@ def create_prospect_record(email):
 # 2️⃣ Push to GHL (Tag + assignment)
 # ---------------------------------------------------------
 def push_to_ghl(email, legacy_code, answers, record_id, assigned_op=None):
+    """
+    Push contact + survey answers + legacy code to GHL.
+    Uses assignedUserId from the OP's GHL User ID.
+    """
     try:
         url = f"{GHL_BASE_URL}/contacts"
         headers = {
@@ -187,7 +196,7 @@ def push_to_ghl(email, legacy_code, answers, record_id, assigned_op=None):
             payload["assignedUserId"] = assigned_op["ghl_user_id"]
             print(f"📌 GHL assignedUserId = {assigned_op['ghl_user_id']}")
         else:
-            print("⚠️ No GHL User ID found for OP. Contact will be unassigned.")
+            print("⚠️ No GHL User ID found for OP. Contact will be unassigned in GHL.")
 
         r = requests.post(url, headers=headers, json=payload)
 
@@ -216,8 +225,8 @@ def push_to_ghl(email, legacy_code, answers, record_id, assigned_op=None):
                 headers=_h(),
                 json={"fields": {"Sync Status": err}},
             )
-        except:
-            pass
+        except Exception as inner_e:
+            print(f"⚠️ Also failed to update Sync Status in Airtable: {inner_e}")
 
 # ---------------------------------------------------------
 # 3️⃣ Submit Route
@@ -234,11 +243,14 @@ def submit():
         if not email:
             return jsonify({"error": "Missing email"}), 400
 
+        # Ensure always 6 answers
         while len(answers) < 6:
             answers.append("No response provided")
 
+        # 1. Create Prospect + Legacy Code + Assigned OP
         legacy_code, prospect_id, assigned_op = create_prospect_record(email)
 
+        # 2. Save survey responses into Survey Responses table
         survey_payload = {
             "fields": {
                 "Date Submitted": datetime.datetime.now().isoformat(),
@@ -258,11 +270,13 @@ def submit():
         if r3.status_code == 200:
             print("✅ Survey responses saved")
         else:
-            print(f"❌ Airtable error: {r3.status_code} {r3.text}")
+            print(f"❌ Airtable error saving survey responses: {r3.status_code} {r3.text}")
 
+        # 3. Background delay before syncing to GHL
         print("⏱ Waiting 60 seconds before GHL sync...")
         time.sleep(60)
 
+        # 4. Final sync to GHL
         push_to_ghl(email, legacy_code, answers, prospect_id, assigned_op)
 
         return jsonify({"status": "ok", "legacy_code": legacy_code})
@@ -298,5 +312,5 @@ if __name__ == "__main__":
         print("❌ Missing Airtable environment variables.")
         exit(1)
 
-    print("🚀 Starting Angus Survey Bot (with /debug_users)")
+    print("🚀 Starting Angus Survey Bot (ID-Only OP Routing)")
     app.run(debug=True, host="0.0.0.0", port=5000)
