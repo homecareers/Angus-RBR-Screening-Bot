@@ -1,11 +1,11 @@
-# === ANGUS™ Survey Bot — Clean Version (No User Email Lookup) ===
+# === ANGUS™ Survey Bot — Clean Version (With Airtable Record ID Writeback) ===
 # - Creates Prospect with unique Legacy Code
-# - Searches for existing GHL contact by email
-# - Retrieves the contact’s assigned GHL User ID
-# - Stores that GHL User ID in Airtable Prospects
-# - Updates GHL contact with survey answers + tag
-# - Adds tag: "rbr screening survey submitted"
-# - NO USER EMAIL LOOKUP ANYWHERE
+# - Saves survey answers to Airtable
+# - Writes legacy code + ATRID to GHL
+# - Retrieves GHL User ID from contact owner
+# - Tags contact
+# - Triggers workflow to update correct Airtable row
+# - NO USER EMAIL LOOKUP
 
 from flask import Flask, render_template, request, jsonify
 import requests
@@ -52,12 +52,6 @@ def _url(table, record_id=None):
 # 1️⃣ Create Prospect Record
 # ---------------------------------------------------------
 def create_prospect_record(email):
-    """
-    Create a new Prospect with:
-      - Prospect Email
-      - Auto-generated Legacy Code (Legacy-X25-OP####)
-    """
-
     payload = {"fields": {"Prospect Email": email}}
     r = requests.post(_url(HQ_TABLE), headers=_h(), json=payload)
     r.raise_for_status()
@@ -79,44 +73,32 @@ def create_prospect_record(email):
     legacy_code = f"Legacy-X25-OP{code_num}"
 
     # Store Legacy Code
-    requests.patch(
-        _url(HQ_TABLE, rec_id),
-        headers=_h(),
-        json={"fields": {"Legacy Code": legacy_code}},
-    )
+    requests.patch(_url(HQ_TABLE, rec_id), headers=_h(),
+                   json={"fields": {"Legacy Code": legacy_code}})
 
     print(f"🧱 Created Prospect {rec_id} with Legacy Code {legacy_code}")
     return legacy_code, rec_id
 
 # ---------------------------------------------------------
-# 2️⃣ Push to GHL (User ID Only)
+# 2️⃣ Push to GHL (Write ATRID + Survey Data)
 # ---------------------------------------------------------
 def push_to_ghl(email, legacy_code, answers, record_id):
-    """
-    Look up existing GHL contact → get assigned GHL User ID → store ID in Airtable.
-    Then update contact with survey answers + tag.
-    """
-
     try:
         headers = {
             "Authorization": f"Bearer {GHL_API_KEY}",
             "Content-Type": "application/json",
         }
 
-        # 1. Look up existing contact
+        # 1. Lookup contact
         lookup_url = f"{GHL_BASE_URL}/contacts/lookup"
         lookup_params = {"email": email, "locationId": GHL_LOCATION_ID}
-
         lookup_resp = requests.get(lookup_url, headers=headers, params=lookup_params)
 
         if lookup_resp.status_code != 200:
-            err = f"❌ GHL lookup failed for email {email}"
+            err = f"❌ GHL lookup failed for {email}"
             print(err)
-            requests.patch(
-                _url(HQ_TABLE, record_id),
-                headers=_h(),
-                json={"fields": {"Sync Status": err}},
-            )
+            requests.patch(_url(HQ_TABLE, record_id), headers=_h(),
+                           json={"fields": {"Sync Status": err}})
             return
 
         contact_data = lookup_resp.json()
@@ -131,7 +113,7 @@ def push_to_ghl(email, legacy_code, answers, record_id):
 
         ghl_contact_id = contact.get("id")
 
-        # Extract only user ID
+        # Extract GHL User ID (Owner)
         assigned_user_id = (
             contact.get("assignedUserId")
             or contact.get("userId")
@@ -139,20 +121,26 @@ def push_to_ghl(email, legacy_code, answers, record_id):
             or contact.get("assigned_user_id")
         )
 
-        print(f"📌 Found GHL Contact ID: {ghl_contact_id}")
+        print(f"📌 GHL Contact ID: {ghl_contact_id}")
         print(f"👤 Assigned User ID: {assigned_user_id}")
 
-        # 2. Store ONLY the GHL User ID (no email)
-        if assigned_user_id:
-            requests.patch(
-                _url(HQ_TABLE, record_id),
-                headers=_h(),
-                json={"fields": {"GHL User ID": assigned_user_id}},
-            )
-        else:
-            print("⚠️ Contact has no assignedUserId")
+        # ---------------------------------------------------------
+        # NEW 🔥 Write Airtable Record ID (ATRID) into GHL contact
+        # ---------------------------------------------------------
+        atrid_payload = {
+            "customField": {
+                "atrid": record_id    # <—— your GHL field: {{contact.atrid}}
+            }
+        }
 
-        # 3. Update GHL contact with survey answers + tag
+        requests.put(f"{GHL_BASE_URL}/contacts/{ghl_contact_id}",
+                     headers=headers, json=atrid_payload)
+
+        print(f"📨 Wrote ATRID to GHL Contact: {record_id}")
+
+        # ---------------------------------------------------------
+        # 3. Update GHL with survey responses + tag
+        # ---------------------------------------------------------
         update_url = f"{GHL_BASE_URL}/contacts/{ghl_contact_id}"
         update_payload = {
             "tags": ["rbr screening survey submitted"],
@@ -163,36 +151,27 @@ def push_to_ghl(email, legacy_code, answers, record_id):
                 "q4_startup_readiness": answers[3],
                 "q5_confidence_level": answers[4],
                 "q6_business_style_gem": answers[5],
-                "legacy_code_id": legacy_code,
+                "legacy_code_id": legacy_code
             },
         }
 
         update_resp = requests.put(update_url, headers=headers, json=update_payload)
 
         if update_resp.status_code == 200:
-            print("✅ GHL contact updated with survey + tag")
-            requests.patch(
-                _url(HQ_TABLE, record_id),
-                headers=_h(),
-                json={"fields": {"Sync Status": "✅ Synced to GHL"}},
-            )
+            print("✅ Updated GHL with survey + legacy code + tag")
+            requests.patch(_url(HQ_TABLE, record_id), headers=_h(),
+                           json={"fields": {"Sync Status": "✅ Synced to GHL"}})
         else:
             err = f"❌ GHL Update Error {update_resp.status_code}: {update_resp.text}"
             print(err)
-            requests.patch(
-                _url(HQ_TABLE, record_id),
-                headers=_h(),
-                json={"fields": {"Sync Status": err}},
-            )
+            requests.patch(_url(HQ_TABLE, record_id), headers=_h(),
+                           json={"fields": {"Sync Status": err}})
 
     except Exception as e:
         err = f"❌ Exception during GHL sync: {str(e)}"
         print(err)
-        requests.patch(
-            _url(HQ_TABLE, record_id),
-            headers=_h(),
-            json={"fields": {"Sync Status": err}},
-        )
+        requests.patch(_url(HQ_TABLE, record_id), headers=_h(),
+                       json={"fields": {"Sync Status": err}})
 
 # ---------------------------------------------------------
 # 3️⃣ Submit Route
@@ -213,10 +192,10 @@ def submit():
         while len(answers) < 6:
             answers.append("No response provided")
 
-        # 1. Create Prospect
+        # 1. Create Prospect + Legacy Code
         legacy_code, prospect_id = create_prospect_record(email)
 
-        # 2. Save Survey Responses
+        # 2. Save survey responses in Airtable
         survey_payload = {
             "fields": {
                 "Date Submitted": datetime.datetime.now().isoformat(),
@@ -232,17 +211,16 @@ def submit():
         }
 
         r3 = requests.post(_url(RESPONSES_TABLE), headers=_h(), json=survey_payload)
-
         if r3.status_code == 200:
-            print("✅ Survey responses saved")
+            print("✅ Survey saved in Airtable")
         else:
-            print(f"❌ Airtable save error: {r3.status_code} {r3.text}")
+            print(f"❌ Airtable Error: {r3.status_code} {r3.text}")
 
-        # 3. Background sync
-        print("⏱ Waiting 60 seconds before GHL sync...")
+        # 3. Delay before GHL sync
+        print("⏱ Waiting 60 seconds before GHL sync…")
         time.sleep(60)
 
-        # 4. Update GHL
+        # 4. Push to GHL (includes ATRID + survey answers)
         push_to_ghl(email, legacy_code, answers, prospect_id)
 
         return jsonify({"status": "ok", "legacy_code": legacy_code})
@@ -250,23 +228,6 @@ def submit():
     except Exception as e:
         print(f"🔥 Error in /submit: {e}")
         return jsonify({"error": str(e)}), 500
-
-# ---------------------------------------------------------
-# Debug Routes
-# ---------------------------------------------------------
-@app.route("/debug_contact/<email>")
-def debug_contact(email):
-    try:
-        headers = {
-            "Authorization": f"Bearer {GHL_API_KEY}",
-            "Content-Type": "application/json",
-        }
-        lookup_url = f"{GHL_BASE_URL}/contacts/lookup"
-        params = {"email": email, "locationId": GHL_LOCATION_ID}
-        resp = requests.get(lookup_url, headers=headers, params=params)
-        return jsonify(resp.json())
-    except Exception as e:
-        return jsonify({"error": str(e)})
 
 # ---------------------------------------------------------
 # Basic Routes
@@ -284,12 +245,9 @@ def health():
 # ---------------------------------------------------------
 if __name__ == "__main__":
     if not AIRTABLE_API_KEY or not AIRTABLE_BASE_ID:
-        print("❌ Missing Airtable env vars.")
-        exit(1)
-
+        print("❌ Missing Airtable environment variables."); exit(1)
     if not GHL_API_KEY or not GHL_LOCATION_ID:
-        print("❌ Missing GHL env vars.")
-        exit(1)
+        print("❌ Missing GHL environment variables."); exit(1)
 
-    print("🚀 Starting Angus Survey Bot (Clean Version — ID Only)")
+    print("🚀 Starting Angus Survey Bot — ATRID Version")
     app.run(debug=True, host="0.0.0.0", port=5000)
