@@ -1,4 +1,4 @@
-# === ANGUS™ Survey Bot — Retrieves GHL User ID & User Email ===
+# === ANGUS™ Survey Bot — Retrieves GHL User ID & User Email (with Enhanced Debugging) ===
 # - Creates Prospect with unique Legacy Code
 # - Searches for existing GHL contact by email
 # - Retrieves the contact's assigned user ID AND user email from GHL
@@ -146,26 +146,45 @@ def push_to_ghl(email, legacy_code, answers, record_id):
         user_email = None
         if existing_user_id:
             try:
-                # Make API call to get user details
+                # Try the users endpoint with location ID as a parameter
                 user_url = f"{GHL_BASE_URL}/users/{existing_user_id}"
-                user_response = requests.get(user_url, headers=headers)
+                print(f"🔍 Attempting to fetch user from: {user_url}")
+                
+                # Add location ID to headers or params
+                user_params = {"locationId": GHL_LOCATION_ID}
+                user_response = requests.get(user_url, headers=headers, params=user_params)
+                
+                print(f"📊 User API Status Code: {user_response.status_code}")
+                print(f"📊 User API Response: {user_response.text[:500]}")  # First 500 chars
                 
                 if user_response.status_code == 200:
                     user_data = user_response.json()
-                    print(f"🔍 User data retrieved: {user_data}")
+                    print(f"🔍 Full User Data Structure: {user_data}")
                     
-                    # Extract user email (might be in different fields)
+                    # Try multiple possible paths to find the email
                     user_email = (
                         user_data.get('email') or 
                         user_data.get('user', {}).get('email') or
-                        user_data.get('userEmail')
+                        user_data.get('userEmail') or
+                        user_data.get('users', {}).get('email') or
+                        user_data.get('data', {}).get('email')
                     )
-                    print(f"📧 User's email: {user_email}")
+                    
+                    # If still no email, print all keys to see structure
+                    if not user_email:
+                        print(f"⚠️ Could not find email in user data. Available keys: {user_data.keys()}")
+                    else:
+                        print(f"📧 Found user email: {user_email}")
+                        
+                elif user_response.status_code == 404:
+                    print(f"❌ User not found with ID: {existing_user_id}")
+                elif user_response.status_code == 401:
+                    print(f"❌ Unauthorized to access user data")
                 else:
-                    print(f"⚠️ Could not retrieve user details: {user_response.status_code}")
+                    print(f"❌ User API error: {user_response.status_code} - {user_response.text}")
                     
             except Exception as e:
-                print(f"⚠️ Error fetching user details: {e}")
+                print(f"❌ Exception fetching user details: {str(e)}")
         
         # 3. Update Airtable with both GHL User ID and Assigned Op Email
         airtable_updates = {}
@@ -175,8 +194,10 @@ def push_to_ghl(email, legacy_code, answers, record_id):
             print(f"💾 Storing GHL User ID: {existing_user_id}")
             
         if user_email:
-            airtable_updates["Assigned Op Email"] = user_email  # This matches your Airtable field
+            airtable_updates["Assigned Op Email"] = user_email
             print(f"💾 Storing Assigned Op Email: {user_email}")
+        else:
+            print("⚠️ No email found for user, only storing User ID")
             
         if airtable_updates:
             requests.patch(
@@ -324,7 +345,12 @@ def debug_user(user_id):
         }
         
         user_url = f"{GHL_BASE_URL}/users/{user_id}"
-        response = requests.get(user_url, headers=headers)
+        user_params = {"locationId": GHL_LOCATION_ID}
+        response = requests.get(user_url, headers=headers, params=user_params)
+        
+        print(f"Debug User URL: {user_url}")
+        print(f"Debug User Status: {response.status_code}")
+        print(f"Debug User Response: {response.text[:1000]}")
         
         if response.status_code == 200:
             return jsonify(response.json())
@@ -356,5 +382,12 @@ if __name__ == "__main__":
         print("❌ Missing GHL environment variables.")
         exit(1)
 
-    print("🚀 Starting Angus Survey Bot (User ID + Email Retrieval)")
+    print("🚀 Starting Angus Survey Bot (User ID + Email Retrieval with Debugging)")
     app.run(debug=True, host="0.0.0.0", port=5000)
+```
+
+This is the complete code with all debugging enhancements. Once you run this, check your logs to see what's happening with the user API call. 
+
+You can also test the user lookup directly by visiting:
+```
+http://yourdomain.com/debug_user/GuLT4HQ2ZrHDb9sGaUko
