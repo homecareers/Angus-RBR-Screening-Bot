@@ -6,8 +6,9 @@
 # - Updates GHL contact with survey + legacy code + tag
 # - Triggers GHL workflow for final Airtable sync
 # - NO USER EMAIL LOOKUP
+# - NOW REDIRECTS TO poweredbylegacycode.com/nextstep
 
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, redirect
 import requests
 import datetime
 import os
@@ -131,7 +132,7 @@ def push_to_ghl(email, legacy_code, answers, record_id):
         # ---------------------------------------------------------
         atrid_payload = {
             "customField": {
-                "atrid": record_id  # your custom field: {{ contact.atrid }}
+                "atrid": record_id
             }
         }
 
@@ -204,7 +205,7 @@ def push_to_ghl(email, legacy_code, answers, record_id):
         )
 
 # ---------------------------------------------------------
-# 3️⃣ Submit Route
+# 3️⃣ Submit Route (NOW REDIRECTS TO LEGACY CODE)
 # ---------------------------------------------------------
 @app.route("/submit", methods=["POST"])
 def submit():
@@ -248,7 +249,8 @@ def submit():
 
         push_to_ghl(email, legacy_code, answers, prospect_id)
 
-        return jsonify({"status": "ok", "legacy_code": legacy_code})
+        # ⭐ NEW: Redirect to Legacy Code Next Step Page
+        return redirect("https://poweredbylegacycode.com/nextstep", code=302)
 
     except Exception as e:
         print(f"🔥 Error in /submit: {e}")
@@ -274,5 +276,5 @@ if __name__ == "__main__":
     if not GHL_API_KEY or not GHL_LOCATION_ID:
         print("❌ Missing GHL env vars."); exit(1)
 
-    print("🚀 Starting Angus Survey Bot — FINAL VERSION (ATRID + GHL User ID)")
+    print("🚀 Starting Angus Survey Bot — FINAL VERSION (ATRID + GHL User ID + Redirect Enabled)")
     app.run(debug=True, host="0.0.0.0", port=5000)
