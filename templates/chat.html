@@ -24,9 +24,18 @@
       line-height: 1.6;
       animation: fadeIn 0.5s ease-in;
     }
-    .bot { color: #33E1FF; font-weight: 500; }
-    .user { color: #00B4D8; text-align: right; font-weight: 500; }
-    .options { margin: 20px 0; }
+    .bot { 
+      color: #33E1FF;
+      font-weight: 500;
+    }
+    .user { 
+      color: #00B4D8;
+      text-align: right; 
+      font-weight: 500;
+    }
+    .options { 
+      margin: 20px 0; 
+    }
     .options button { 
       display: block; 
       margin: 8px 0; 
@@ -40,11 +49,13 @@
       font-size: 14px;
       transition: all 0.25s ease;
       text-align: left;
+      letter-spacing: 0.3px;
     }
     .options button:hover {
       background: #33E1FF;
       color: #000;
       transform: translateY(-2px);
+      box-shadow: 0 0 14px rgba(0,255,200,0.45);
     }
     input {
       width: 100%;
@@ -55,6 +66,30 @@
       background: #222;
       color: #fff;
       font-size: 16px;
+      box-sizing: border-box;
+    }
+    input:focus {
+      outline: none;
+      border-color: #33E1FF;
+      box-shadow: 0 0 10px rgba(51,225,255,0.3);
+    }
+    .loading {
+      color: #33E1FF;
+      font-style: italic;
+    }
+    .loading::after {
+      content: '...';
+      animation: dots 1.5s infinite;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes dots {
+      0% { content: ''; }
+      33% { content: '.'; }
+      66% { content: '..'; }
+      100% { content: '...'; }
     }
   </style>
 </head>
@@ -62,88 +97,168 @@
   <div class="chat-box" id="chat"></div>
 
   <script>
+    /* ---------------------- Survey Questions ---------------------- */
     const surveyFlow = [
-      { question: "When you picture your future, which one gets you fired up the most?",
-        options:["🌴 More time freedom","💰 Extra income","🔄 Career change","🤝 Community","✍️ Other"] },
-      { question:"If building your future was a Netflix series, how many hours a week?",
-        options:["3–5","5–10","10–15","15+"] },
-      { question:"Every hero's got a storyline — which one is yours?",
-        options:["✨ Newbie","😅 Tried before","🏆 Crushed it"] },
-      { question:"If I dropped a simple plan today, when would you start?",
-        options:["🚀 Now","📆 30 days","⏳ 2–3 months","👀 Just exploring"] },
-      { question:"On a 1–10 confidence scale?",
-        options:["1","2","3","4","5","6","7","8","9","10"] },
-      { question:"In a team setting, what lights you up?",
-        options:["🤝 Pearl","🎉 Ruby","📊 Sapphire","💎 Emerald"] }
+      {
+        question: "When you picture your future, which one gets you fired up the most?",
+        options: [
+          "🌴 More time freedom for adventures",
+          "💰 Extra income (bye-bye money stress)",
+          "🔄 Total career change (fresh chapter)",
+          "🤝 Belonging to a mission-driven community",
+          "✍️ Other"
+        ]
+      },
+      {
+        question: "If building your future was a Netflix series, how many hours a week would you binge it?",
+        options: [
+          "🎬 3–5 hours (side hustle pilot season)",
+          "📺 5–10 hours (mini-series)",
+          "🍿 10–15 hours (serious season arc)",
+          "🎥 15+ hours (full box set, I'm all in)"
+        ]
+      },
+      {
+        question: "Every hero's got a storyline — which best describes yours so far?",
+        options: [
+          "✨ Total newbie (fresh chapter, blank page)",
+          "😅 Tried before, but plot twist: it didn't work out",
+          "🏆 Tried before and crushed it (looking for the sequel)"
+        ]
+      },
+      {
+        question: "If I dropped a simple game plan in your lap today, when would you press play?",
+        options: [
+          "🚀 Right now, let's roll",
+          "📆 Within 30 days",
+          "⏳ 2–3 months out",
+          "👀 Just exploring the trailer for now"
+        ]
+      },
+      {
+        question: "On a 1–10 confidence scale, where are you right now?",
+        options: ["1️⃣ 1","2️⃣ 2","3️⃣ 3","4️⃣ 4","5️⃣ 5","6️⃣ 6","7️⃣ 7","8️⃣ 8","9️⃣ 9","🔟 10"]
+      },
+      {
+        question: "In a team setting, what lights you up the most?",
+        options: [
+          "🤝 Connecting & building relationships (Pearl)",
+          "🎉 Recognition & being celebrated (Ruby)",
+          "📊 Having clear systems & structure (Sapphire)",
+          "💎 Hitting goals & building wealth (Emerald)"
+        ]
+      }
     ];
 
     let answers = [];
     let step = 0;
     let userEmail = "";
 
-    function showBot(msg){
-      chat.innerHTML += `<div class="message bot">${msg}</div>`;
+    /* ---------------------- Message Functions ---------------------- */
+    function showBotMessage(msg) {
+      chat.innerHTML += `<div class='message bot'>${msg}</div>`;
+      chat.scrollTop = chat.scrollHeight;
     }
-    function showUser(msg){
-      chat.innerHTML += `<div class="message user">${msg}</div>`;
+
+    function showUserMessage(msg) {
+      chat.innerHTML += `<div class='message user'>${msg}</div>`;
+      chat.scrollTop = chat.scrollHeight;
     }
-    function askNext(){
-      if(step < surveyFlow.length){
-        const q = surveyFlow[step];
-        showBot(`<strong>Question ${step+1} of 6:</strong><br>${q.question}`);
-        let html = "<div class='options'>";
-        q.options.forEach(opt=>{
-          html += `<button onclick="selectOption('${opt.replace(/'/g,'\\\'')}')">${opt}</button>`;
-        });
-        html += "</div>";
-        chat.innerHTML += html;
-      } else askForEmail();
+
+    function showLoading() {
+      chat.innerHTML += `<div class='message loading' id='loading'>ANGUS is thinking</div>`;
+      chat.scrollTop = chat.scrollHeight;
     }
-    function selectOption(opt){
-      document.querySelectorAll('.options').forEach(x=>x.remove());
-      showUser(opt);
-      answers.push(opt);
+
+    function hideLoading() {
+      const loading = document.getElementById('loading');
+      if (loading) loading.remove();
+    }
+
+    /* ---------------------- Survey Flow ---------------------- */
+    function askNext() {
+      if (step < surveyFlow.length) {
+        showLoading();
+        setTimeout(() => {
+          hideLoading();
+          const q = surveyFlow[step];
+          showBotMessage(`<strong>Question ${step + 1} of 6:</strong><br><br>${q.question}`);
+
+          let optionsHTML = "<div class='options'>";
+          q.options.forEach(opt => {
+            const esc = opt.replace(/'/g, "\\'");
+            optionsHTML += `<button onclick="selectOption('${esc}')">${opt}</button>`;
+          });
+          optionsHTML += "</div>";
+          chat.innerHTML += optionsHTML;
+
+        }, 900);
+      } else {
+        askForEmail();
+      }
+    }
+
+    function selectOption(option) {
+      document.querySelectorAll('.options').forEach(div => div.remove());
+      showUserMessage(option);
+      answers.push(option);
       step++;
-      askNext();
+      setTimeout(() => askNext(), 400);
     }
-    function askForEmail(){
-      showBot("Last step — what's the email you used for your RBR booklet?");
-      chat.innerHTML += `<input id="emailInput" type="email" placeholder="Enter your email" onkeydown="if(event.key==='Enter')saveEmail()">`;
+
+    /* ---------------------- Email Step ---------------------- */
+    function askForEmail() {
+      showBotMessage("Last thing — what’s the email you used to download your Real Brick Road™ booklet?");
+      chat.innerHTML += `
+        <input id="emailInput" type="email" placeholder="Enter your email..." 
+               onkeydown="if(event.key==='Enter'){saveEmail();}">
+      `;
       document.getElementById("emailInput").focus();
     }
-    function saveEmail(){
-      const email = emailInput.value.trim();
+
+    function saveEmail() {
+      const email = document.getElementById("emailInput").value.trim();
+      if (!email) { showBotMessage("⚠️ Please enter your email."); return; }
       userEmail = email;
-      showUser(email);
-      emailInput.remove();
+      showUserMessage(email);
+      document.getElementById("emailInput").remove();
       submitSurvey();
     }
 
-    // ⭐ FINAL WORKING SUBMIT SYSTEM ⭐
-    function submitSurvey(){
-      const payload = { email:userEmail, answers:answers };
+    /* ---------------------- Submit + JSON Redirect ---------------------- */
+    function submitSurvey() {
+      showLoading();  
 
-      fetch("https://angus-rbr-survey-booking-bot-production.up.railway.app/submit",{
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify(payload)
+      const payload = {
+        email: userEmail,
+        answers: answers
+      };
+
+      fetch("https://angus-rbr-survey-booking-bot-production.up.railway.app/submit", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(payload)
       })
-      .then(res=>res.json())
-      .then(data=>{
-        if(data.redirect_url){
+      .then(res => res.json())
+      .then(data => {
+        if (data.redirect_url) {
+          // FORCE parent window redirect (works in all iframes)
           window.top.location.href = data.redirect_url;
         } else {
-          showBot("⚠️ Something went wrong. Try again.");
+          showBotMessage("⚠️ Something glitched. Try again.");
         }
       })
-      .catch(err=>{
-        console.log(err);
-        showBot("⚠️ Issue sending answers. Try again.");
+      .catch(err => {
+        console.error(err);
+        showBotMessage("⚠️ Issue sending answers. Try again.");
       });
     }
 
-    showBot("I'm ANGUS™. Ready?");
-    askNext();
+    /* ---------------------- Intro ---------------------- */
+    window.onload = () => {
+      showBotMessage("What's up, legend?! I'm ANGUS™ — the strategist behind The Real Brick Road™. I’m here to get you laser-clear on your next moves. Ready?");
+      setTimeout(() => askNext(), 1800);
+    }
   </script>
 </body>
 </html>
