@@ -1,151 +1,173 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>ANGUS™ Survey Bot — Elite Cinematic Edition</title>
+  <title>ANGUS™ — Legacy Code Screening</title>
   <style>
-    body { 
-      font-family: 'Inter', Arial, sans-serif; 
-      background: #111; 
-      color: #eee; 
-      margin: 0; 
-      padding: 20px; 
+    body {
+      font-family: 'Inter', Arial, sans-serif;
+      background: #050608;
+      color: #f5f5f5;
+      margin: 0;
+      padding: 20px;
       min-height: 100vh;
     }
-    .chat-box { 
-      max-width: 600px; 
-      margin: 50px auto; 
-      background: #1a1a1a; 
-      padding: 30px; 
-      border-radius: 12px; 
-      box-shadow: 0 4px 20px rgba(0,0,0,0.6);
+
+    .chat-box {
+      max-width: 680px;
+      margin: 40px auto;
+      background: #0f0f0f;
+      padding: 30px;
+      border-radius: 18px;
+      box-shadow: 0 24px 60px rgba(0,0,0,0.85);
+      border: 1px solid #222;
     }
-    .message { 
-      margin: 15px 0; 
+
+    .message {
+      margin: 16px 0;
       line-height: 1.6;
-      animation: fadeIn 0.5s ease-in;
+      animation: fadeIn 0.45s ease-in;
     }
-    .bot { 
-      color: #33E1FF;
-      font-weight: 500;
+
+    .bot {
+      color: #f5f5f5;
     }
-    .user { 
-      color: #00B4D8;
-      text-align: right; 
-      font-weight: 500;
+
+    .user {
+      color: #D4A72C;
+      text-align: right;
+      font-weight: 600;
     }
-    .options { 
-      margin: 20px 0; 
+
+    .bot strong {
+      color: #D4A72C;
     }
-    .options button { 
-      display: block; 
-      margin: 8px 0; 
-      width: 100%; 
-      padding: 12px 16px; 
-      border: 1px solid #00FFC8; 
-      border-radius: 8px; 
-      background: #1e1e1e; 
-      color: #00FFC8; 
-      cursor: pointer; 
-      font-size: 14px;
-      transition: all 0.25s ease;
+
+    .options button {
+      display: block;
+      width: 100%;
+      padding: 12px 16px;
+      background: #111;
+      color: #f5f5f5;
+      border: 1px solid #D4A72C;
+      border-radius: 10px;
+      margin: 10px 0;
       text-align: left;
-      letter-spacing: 0.3px;
+      cursor: pointer;
+      transition: all 0.22s ease;
+      font-size: 15px;
     }
+
     .options button:hover {
-      background: #33E1FF;
-      color: #000;
+      background: #D4A72C;
+      color: #050608;
       transform: translateY(-2px);
-      box-shadow: 0 0 14px rgba(0,255,200,0.45);
+      box-shadow: 0 0 18px rgba(212,167,44,0.45);
     }
+
     input {
       width: 100%;
-      padding: 12px;
-      margin-top: 15px;
-      border: 2px solid #00FFC8;
-      border-radius: 8px;
-      background: #222;
-      color: #fff;
+      padding: 14px;
+      margin-top: 16px;
+      border-radius: 10px;
+      background: #111;
+      border: 2px solid #333;
+      color: #f5f5f5;
       font-size: 16px;
       box-sizing: border-box;
     }
+
     input:focus {
       outline: none;
-      border-color: #33E1FF;
-      box-shadow: 0 0 10px rgba(51,225,255,0.3);
+      border-color: #D4A72C;
+      box-shadow: 0 0 10px rgba(212,167,44,0.35);
     }
+
     .loading {
-      color: #33E1FF;
+      color: #D4A72C;
       font-style: italic;
     }
+
     .loading::after {
-      content: '...';
+      content: "...";
       animation: dots 1.5s infinite;
     }
+
     @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(10px); }
+      from { opacity: 0; transform: translateY(12px); }
       to { opacity: 1; transform: translateY(0); }
     }
+
     @keyframes dots {
-      0% { content: ''; }
-      33% { content: '.'; }
-      66% { content: '..'; }
-      100% { content: '...'; }
+      0% { content: ""; }
+      33% { content: "."; }
+      66% { content: ".."; }
+      100% { content: "..."; }
+    }
+
+    @media(max-width:600px) {
+      .chat-box { padding: 22px; margin: 20px auto; }
     }
   </style>
 </head>
+
 <body>
   <div class="chat-box" id="chat"></div>
 
   <script>
-    /* ---------------------- Survey Questions ---------------------- */
+    const chat = document.getElementById('chat');
+    const BACKEND_URL = "https://YOUR_BACKEND_URL/submit"; // replace with your Railway URL
+
+    // ----------------------------------------
+    // The original 6 screening questions
+    // ----------------------------------------
     const surveyFlow = [
       {
         question: "When you picture your future, which one gets you fired up the most?",
         options: [
-          "🌴 More time freedom for adventures",
-          "💰 Extra income (bye-bye money stress)",
-          "🔄 Total career change (fresh chapter)",
-          "🤝 Belonging to a mission-driven community",
-          "✍️ Other"
+          "More time freedom for adventures",
+          "Extra income (bye-bye money stress)",
+          "Total career change (fresh chapter)",
+          "Belonging to a mission-driven community",
+          "Other"
         ]
       },
       {
-        question: "If building your future was a Netflix series, how many hours a week would you binge it?",
+        question: "If building your future was a Netflix series... how many hours a week would you binge it?",
         options: [
-          "🎬 3–5 hours (side hustle pilot season)",
-          "📺 5–10 hours (mini-series)",
-          "🍿 10–15 hours (serious season arc)",
-          "🎥 15+ hours (full box set, I'm all in)"
+          "3–5 hours (side hustle pilot)",
+          "5–10 hours (mini-series)",
+          "10–15 hours (serious arc)",
+          "15+ hours (full box set, I'm all in)"
         ]
       },
       {
         question: "Every hero's got a storyline — which best describes yours so far?",
         options: [
-          "✨ Total newbie (fresh chapter, blank page)",
-          "😅 Tried before, but plot twist: it didn't work out",
-          "🏆 Tried before and crushed it (looking for the sequel)"
+          "Total newbie (fresh chapter)",
+          "Tried before, didn’t work out",
+          "Tried before and crushed it"
         ]
       },
       {
-        question: "If I dropped a simple game plan in your lap today, when would you press play?",
+        question: "If I dropped a simple game plan in your lap today — when would you press play?",
         options: [
-          "🚀 Right now, let's roll",
-          "📆 Within 30 days",
-          "⏳ 2–3 months out",
-          "👀 Just exploring the trailer for now"
+          "Right now",
+          "Within 30 days",
+          "2–3 months out",
+          "Just exploring for now"
         ]
       },
       {
-        question: "On a 1–10 confidence scale, where are you right now?",
-        options: ["1️⃣ 1","2️⃣ 2","3️⃣ 3","4️⃣ 4","5️⃣ 5","6️⃣ 6","7️⃣ 7","8️⃣ 8","9️⃣ 9","🔟 10"]
+        question: "On a 1–10 confidence scale — where are you right now?",
+        options: ["1","2","3","4","5","6","7","8","9","10"]
       },
       {
         question: "In a team setting, what lights you up the most?",
         options: [
-          "🤝 Connecting & building relationships (Pearl)",
-          "🎉 Recognition & being celebrated (Ruby)",
-          "📊 Having clear systems & structure (Sapphire)",
-          "💎 Hitting goals & building wealth (Emerald)"
+          "Connecting & building relationships (Pearl)",
+          "Recognition & being celebrated (Ruby)",
+          "Clear systems & structure (Sapphire)",
+          "Hitting goals & building wealth (Emerald)"
         ]
       }
     ];
@@ -154,111 +176,103 @@
     let step = 0;
     let userEmail = "";
 
-    /* ---------------------- Message Functions ---------------------- */
-    function showBotMessage(msg) {
-      chat.innerHTML += `<div class='message bot'>${msg}</div>`;
+    function showBotMessage(msg){
+      chat.innerHTML += `<div class="message bot">${msg}</div>`;
       chat.scrollTop = chat.scrollHeight;
     }
 
-    function showUserMessage(msg) {
-      chat.innerHTML += `<div class='message user'>${msg}</div>`;
+    function showUserMessage(msg){
+      chat.innerHTML += `<div class="message user">${msg}</div>`;
       chat.scrollTop = chat.scrollHeight;
     }
 
-    function showLoading() {
-      chat.innerHTML += `<div class='message loading' id='loading'>ANGUS is thinking</div>`;
-      chat.scrollTop = chat.scrollHeight;
+    function showLoading(){
+      chat.innerHTML += `<div class="message loading" id="loading">ANGUS is thinking</div>`;
     }
 
-    function hideLoading() {
-      const loading = document.getElementById('loading');
-      if (loading) loading.remove();
+    function hideLoading(){
+      const el = document.getElementById('loading');
+      if(el) el.remove();
     }
 
-    /* ---------------------- Survey Flow ---------------------- */
-    function askNext() {
-      if (step < surveyFlow.length) {
+    function askNext(){
+      if(step < surveyFlow.length){
         showLoading();
-        setTimeout(() => {
+        setTimeout(()=>{
           hideLoading();
           const q = surveyFlow[step];
-          showBotMessage(`<strong>Question ${step + 1} of 6:</strong><br><br>${q.question}`);
+          showBotMessage(`<strong>Question ${step+1} of 6</strong><br><br>${q.question}`);
 
-          let optionsHTML = "<div class='options'>";
-          q.options.forEach(opt => {
+          let html = "<div class='options'>";
+          q.options.forEach(opt=>{
             const esc = opt.replace(/'/g, "\\'");
-            optionsHTML += `<button onclick="selectOption('${esc}')">${opt}</button>`;
+            html += `<button onclick="selectOption('${esc}')">${opt}</button>`;
           });
-          optionsHTML += "</div>";
-          chat.innerHTML += optionsHTML;
+          html += "</div>";
+          chat.innerHTML += html;
 
-        }, 900);
+        },800);
       } else {
         askForEmail();
       }
     }
 
-    function selectOption(option) {
-      document.querySelectorAll('.options').forEach(div => div.remove());
+    function selectOption(option){
+      document.querySelectorAll(".options").forEach(el=>el.remove());
       showUserMessage(option);
       answers.push(option);
       step++;
-      setTimeout(() => askNext(), 400);
+      setTimeout(askNext,300);
     }
 
-    /* ---------------------- Email Step ---------------------- */
-    function askForEmail() {
-      showBotMessage("Last thing — what’s the email you used to download your Real Brick Road™ booklet?");
+    function askForEmail(){
+      showBotMessage("Last thing — what's the email you used to grab your Real Brick Road™ booklet?");
       chat.innerHTML += `
-        <input id="emailInput" type="email" placeholder="Enter your email..." 
+        <input type="email" id="emailInput" placeholder="Enter your email..."
                onkeydown="if(event.key==='Enter'){saveEmail();}">
       `;
       document.getElementById("emailInput").focus();
     }
 
-    function saveEmail() {
+    function saveEmail(){
       const email = document.getElementById("emailInput").value.trim();
-      if (!email) { showBotMessage("⚠️ Please enter your email."); return; }
+      if(!email){ showBotMessage("I’ll need your email for your results."); return; }
       userEmail = email;
       showUserMessage(email);
       document.getElementById("emailInput").remove();
       submitSurvey();
     }
 
-    /* ---------------------- Submit + JSON Redirect ---------------------- */
-    function submitSurvey() {
-      showLoading();  
+    function submitSurvey(){
+      showLoading();
 
-      const payload = {
-        email: userEmail,
-        answers: answers
-      };
-
-      fetch("https://angus-rbr-survey-booking-bot-production.up.railway.app/submit", {
+      fetch(BACKEND_URL, {
         method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify(payload)
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({email:userEmail, answers:answers})
       })
-      .then(res => res.json())
-      .then(data => {
-        if (data.redirect_url) {
-          // FORCE parent window redirect (works in all iframes)
+      .then(res=>res.json())
+      .then(data=>{
+        hideLoading();
+        if(data.redirect_url){
           window.top.location.href = data.redirect_url;
         } else {
-          showBotMessage("⚠️ Something glitched. Try again.");
+          showBotMessage("Something glitched — refresh and try again.");
         }
       })
-      .catch(err => {
+      .catch(err=>{
         console.error(err);
-        showBotMessage("⚠️ Issue sending answers. Try again.");
+        hideLoading();
+        showBotMessage("Server issue. Refresh and try again.");
       });
     }
 
-    /* ---------------------- Intro ---------------------- */
-    window.onload = () => {
-      showBotMessage("What's up, legend?! I'm ANGUS™ — the strategist behind The Real Brick Road™. I’m here to get you laser-clear on your next moves. Ready?");
-      setTimeout(() => askNext(), 1800);
-    }
+    window.selectOption = selectOption;
+
+    window.onload = function(){
+      showBotMessage("Alright legend — I'm ANGUS™. Let’s lock in the intel so I can map your Legacy Code pathway with precision.");
+      setTimeout(()=> askNext(), 1400);
+    };
   </script>
 </body>
 </html>
