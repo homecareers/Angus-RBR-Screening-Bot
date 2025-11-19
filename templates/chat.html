@@ -253,6 +253,7 @@
         answers: answers 
       };
 
+      // Call the Railway backend directly
       fetch("https://angus-rbr-survey-booking-bot-production.up.railway.app/submit", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -260,8 +261,7 @@
       })
       .then(response => {
           if (response.redirected) {
-              // ⭐ WORLD-CLASS FIX:
-              // FORCE THE MAIN GHL WINDOW TO REDIRECT
+              // Force the parent GHL window (outside iframe) to redirect
               window.top.location.href = response.url;
           } else {
               console.error("Backend did NOT return redirect:", response);
