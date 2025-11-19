@@ -244,7 +244,7 @@
       submitSurvey();
     }
 
-    /* ---------------------- Submit + Follow Backend Redirect ---------------------- */
+    /* ---------------------- Submit + TOP-LEVEL REDIRECT ---------------------- */
     function submitSurvey() {
       showLoading();
 
@@ -253,7 +253,6 @@
         answers: answers 
       };
 
-      // ⭐ NOW we call the REAL backend at Railway
       fetch("https://angus-rbr-survey-booking-bot-production.up.railway.app/submit", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -261,7 +260,9 @@
       })
       .then(response => {
           if (response.redirected) {
-              window.location.href = response.url;
+              // ⭐ WORLD-CLASS FIX:
+              // FORCE THE MAIN GHL WINDOW TO REDIRECT
+              window.top.location.href = response.url;
           } else {
               console.error("Backend did NOT return redirect:", response);
               showBotMessage("⚠️ Something glitched. Please try again.");
