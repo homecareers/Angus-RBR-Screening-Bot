@@ -244,7 +244,7 @@
       submitSurvey();
     }
 
-    /* ---------------------- Submit + Redirect ---------------------- */
+    /* ---------------------- Submit + Follow Backend Redirect ---------------------- */
     function submitSurvey() {
       showLoading();
 
@@ -253,18 +253,25 @@
         answers: answers 
       };
 
-      // 🚀 FIRE AND FORGET — do not wait for app.py (backend can take 60s)
+      // ⭐ We NOW wait for the backend redirect.
       fetch("/submit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(surveyData)
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(surveyData)
       })
-      .catch(err => console.error("Background error:", err));
-
-      // INSTANT REDIRECT — cinematic + frictionless
-      setTimeout(() => {
-        window.location.href = "https://therealbrickroad.com/booknow";
-      }, 1200);
+      .then(response => {
+          if (response.redirected) {
+              // ⭐ This is the correct nextstep URL with ?uid=<GHL_USER_ID>
+              window.location.href = response.url;
+          } else {
+              showBotMessage("Hmm... something glitched. Try again.");
+              console.error("No redirect received from backend:", response);
+          }
+      })
+      .catch(err => {
+          console.error("Error submitting survey:", err);
+          showBotMessage("⚠️ There was an issue sending your answers. Please try again.");
+      });
     }
 
     /* ---------------------- Intro Message ---------------------- */
