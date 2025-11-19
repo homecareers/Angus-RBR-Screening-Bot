@@ -253,19 +253,18 @@
         answers: answers 
       };
 
-      // ⭐ We NOW wait for the backend redirect.
-      fetch("/submit", {
+      // ⭐ NOW we call the REAL backend at Railway
+      fetch("https://angus-rbr-survey-booking-bot-production.up.railway.app/submit", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(surveyData)
       })
       .then(response => {
           if (response.redirected) {
-              // ⭐ This is the correct nextstep URL with ?uid=<GHL_USER_ID>
               window.location.href = response.url;
           } else {
-              showBotMessage("Hmm... something glitched. Try again.");
-              console.error("No redirect received from backend:", response);
+              console.error("Backend did NOT return redirect:", response);
+              showBotMessage("⚠️ Something glitched. Please try again.");
           }
       })
       .catch(err => {
