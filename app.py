@@ -1,21 +1,23 @@
-# === ANGUS™ Survey Bot — Final ATRID + GHL User ID + Calendar Routing Version ===
-# - Creates Prospect with unique Legacy Code
-# - Saves survey answers to Airtable
-# - Writes ATRID (Airtable Record ID) into GHL contact
-# - Writes GHL User ID into Airtable
-# - Updates GHL contact with survey + legacy code + tag
-# - Triggers GHL workflow for final Airtable sync
-# - NO USER EMAIL LOOKUP
-# - Redirects to poweredbylegacycode.com/nextstep?uid=<GHL_USER_ID>
-# - Provides /calendar/<GHL_USER_ID> route that redirects to correct calendar URL
+# === ANGUS™ Survey Bot — FINAL PRODUCTION VERSION ===
+# - Fully CORS-enabled for GoHighLevel iframe use
+# - Iframe-safe redirect headers included
+# - Airtable sync
+# - GHL sync
+# - Redirects parent window to /nextstep?uid=XXXX
+# - Calendar routing endpoint
+# ------------------------------------------------------
 
 from flask import Flask, render_template, request, jsonify, redirect
+from flask_cors import CORS
 import requests
 import datetime
 import os
 import urllib.parse
 
 app = Flask(__name__)
+
+# ⭐ Allow all origins so GHL iframe can POST safely
+CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 
 # ---------------------------------------------------------
 # Airtable Credentials
@@ -24,7 +26,7 @@ AIRTABLE_API_KEY = os.getenv("AIRTABLE_API_KEY")
 AIRTABLE_BASE_ID = os.getenv("AIRTABLE_BASE_ID")
 AIRTABLE_RESPONSES_TABLE = os.getenv("AIRTABLE_TABLE_NAME") or "Survey Responses"
 AIRTABLE_PROSPECTS_TABLE = os.getenv("AIRTABLE_PROSPECTS_TABLE") or "Prospects"
-AIRTABLE_USERS_TABLE = os.getenv("AIRTABLE_USERS_TABLE") or "Users"  # NEW: Users table
+AIRTABLE_USERS_TABLE = os.getenv("AIRTABLE_USERS_TABLE") or "Users"
 
 BASE_ID = AIRTABLE_BASE_ID
 HQ_TABLE = AIRTABLE_PROSPECTS_TABLE
@@ -52,7 +54,7 @@ def _url(table, record_id=None):
     return f"{base}/{record_id}" if record_id else base
 
 # ---------------------------------------------------------
-# 1️⃣ Create Prospect Record
+# Create Prospect Record + Legacy Code
 # ---------------------------------------------------------
 def create_prospect_record(email):
     payload = {"fields": {"Prospect Email": email}}
@@ -61,275 +63,181 @@ def create_prospect_record(email):
     rec = r.json()
     rec_id = rec["id"]
 
-    # Fetch AutoNum
+    # Get AutoNum
     auto = rec.get("fields", {}).get("AutoNum")
     if auto is None:
         r2 = requests.get(_url(HQ_TABLE, rec_id), headers=_h())
-        r2.raise_for_status()
         auto = r2.json().get("fields", {}).get("AutoNum")
 
-    if auto is None:
-        raise RuntimeError("AutoNum missing from Prospects table.")
+    legacy_code = f"Legacy-X25-OP{1000 + int(auto)}"
 
-    # Generate Legacy Code
-    code_num = 1000 + int(auto)
-    legacy_code = f"Legacy-X25-OP{code_num}"
-
-    # Save Legacy Code
+    # Save Code
     requests.patch(
         _url(HQ_TABLE, rec_id),
         headers=_h(),
         json={"fields": {"Legacy Code": legacy_code}},
     )
 
-    print(f"🧱 Created Prospect {rec_id} with Legacy Code {legacy_code}")
     return legacy_code, rec_id
 
 # ---------------------------------------------------------
-# 2️⃣ Push to GHL (Write ATRID + Survey Data + Store GHL User ID)
-#     RETURNS assigned_user_id so we can pass it to /nextstep
+# Push to GHL + Return Assigned User ID
 # ---------------------------------------------------------
 def push_to_ghl(email, legacy_code, answers, record_id):
-    assigned_user_id = None  # default if we don't find it
+    assigned_user_id = None
+
     try:
         headers = {
             "Authorization": f"Bearer {GHL_API_KEY}",
             "Content-Type": "application/json",
         }
 
-        # 1. Lookup existing GHL contact
-        lookup_url = f"{GHL_BASE_URL}/contacts/lookup"
-        lookup_params = {"email": email, "locationId": GHL_LOCATION_ID}
-        lookup_resp = requests.get(lookup_url, headers=headers, params=lookup_params)
+        lookup_resp = requests.get(
+            f"{GHL_BASE_URL}/contacts/lookup",
+            headers=headers,
+            params={"email": email, "locationId": GHL_LOCATION_ID},
+        )
 
         if lookup_resp.status_code != 200:
-            err = f"❌ GHL lookup failed for {email}"
-            print(err)
-            requests.patch(
-                _url(HQ_TABLE, record_id),
-                headers=_h(),
-                json={"fields": {"Sync Status": err}},
-            )
-            return assigned_user_id
+            return None
 
-        contact_data = lookup_resp.json()
+        data = lookup_resp.json()
+        contact = None
 
-        if "contacts" in contact_data and contact_data["contacts"]:
-            contact = contact_data["contacts"][0]
-        elif "contact" in contact_data:
-            contact = contact_data["contact"]
-        else:
-            contact = contact_data
+        if "contacts" in data and data["contacts"]:
+            contact = data["contacts"][0]
+        elif "contact" in data:
+            contact = data["contact"]
 
-        ghl_contact_id = contact.get("id")
+        ghl_id = contact.get("id")
 
-        # Extract GHL User ID (Assigned User)
         assigned_user_id = (
             contact.get("assignedUserId")
             or contact.get("userId")
             or contact.get("assignedTo")
-            or contact.get("assigned_user_id")
         )
 
-        print(f"📌 GHL Contact ID: {ghl_contact_id}")
-        print(f"👤 Assigned User ID: {assigned_user_id}")
-
-        # ---------------------------------------------------------
-        # Write ATRID (Airtable Record ID) into GHL contact
-        # ---------------------------------------------------------
-        atrid_payload = {
-            "customField": {
-                "atrid": record_id  # your custom field in GHL: {{ contact.atrid }}
-            }
-        }
-
+        # Save ATRID in GHL
         requests.put(
-            f"{GHL_BASE_URL}/contacts/{ghl_contact_id}",
+            f"{GHL_BASE_URL}/contacts/{ghl_id}",
             headers=headers,
-            json=atrid_payload
+            json={"customField": {"atrid": record_id}},
         )
 
-        print(f"📨 Wrote ATRID to GHL Contact: {record_id}")
-
-        # ---------------------------------------------------------
-        # Write GHL User ID into Airtable Prospects table
-        # ---------------------------------------------------------
+        # Save Assigned User ID in Airtable
         if assigned_user_id:
             requests.patch(
                 _url(HQ_TABLE, record_id),
                 headers=_h(),
-                json={"fields": {"GHL User ID": assigned_user_id}}
+                json={"fields": {"GHL User ID": assigned_user_id}},
             )
-            print(f"💾 Saved GHL User ID in Airtable (Prospects): {assigned_user_id}")
-        else:
-            print("⚠️ No GHL User ID found for contact.")
 
-        # ---------------------------------------------------------
-        # Update GHL with survey answers + tag + legacy code
-        # ---------------------------------------------------------
-        update_payload = {
-            "tags": ["rbr screening survey submitted"],
-            "customField": {
-                "q1_reason_for_business": answers[0],
-                "q2_time_commitment": answers[1],
-                "q3_business_experience": answers[2],
-                "q4_startup_readiness": answers[3],
-                "q5_confidence_level": answers[4],
-                "q6_business_style_gem": answers[5],
-                "legacy_code_id": legacy_code
-            },
-        }
-
-        update_resp = requests.put(
-            f"{GHL_BASE_URL}/contacts/{ghl_contact_id}",
+        # Update GHL fields
+        requests.put(
+            f"{GHL_BASE_URL}/contacts/{ghl_id}",
             headers=headers,
-            json=update_payload
+            json={
+                "tags": ["rbr screening survey submitted"],
+                "customField": {
+                    "q1_reason_for_business": answers[0],
+                    "q2_time_commitment": answers[1],
+                    "q3_business_experience": answers[2],
+                    "q4_startup_readiness": answers[3],
+                    "q5_confidence_level": answers[4],
+                    "q6_business_style_gem": answers[5],
+                    "legacy_code_id": legacy_code,
+                },
+            },
         )
-
-        if update_resp.status_code == 200:
-            print("✅ Updated GHL with survey + legacy code + tag")
-            requests.patch(
-                _url(HQ_TABLE, record_id),
-                headers=_h(),
-                json={"fields": {"Sync Status": "✅ Synced to GHL"}},
-            )
-        else:
-            err = f"❌ GHL Update Error {update_resp.status_code}: {update_resp.text}"
-            print(err)
-            requests.patch(
-                _url(HQ_TABLE, record_id),
-                headers=_h(),
-                json={"fields": {"Sync Status": err}},
-            )
 
     except Exception as e:
-        err = f"❌ Exception during GHL sync: {str(e)}"
-        print(err)
-        requests.patch(
-            _url(HQ_TABLE, record_id),
-            headers=_h(),
-            json={"fields": {"Sync Status": err}},
-        )
+        print("GHL Sync Error:", e)
 
     return assigned_user_id
 
 # ---------------------------------------------------------
-# 3️⃣ Submit Route
-#     - Saves to Airtable
-#     - Pushes to GHL
-#     - Redirects to Legacy Code /nextstep with ?uid=<GHL_USER_ID>
+# Submit Route (Iframe-safe redirect)
 # ---------------------------------------------------------
 @app.route("/submit", methods=["POST"])
 def submit():
     try:
         data = request.json or {}
-        print("📩 Incoming:", data)
-
-        email = (data.get("email") or "").strip()
+        email = data.get("email", "").strip()
         answers = data.get("answers", [])
 
         if not email:
             return jsonify({"error": "Missing email"}), 400
 
-        # Pad answers if fewer than 6
         while len(answers) < 6:
-            answers.append("No response provided")
+            answers.append("No response")
 
-        # 1. Create Prospect + Legacy Code
         legacy_code, prospect_id = create_prospect_record(email)
 
-        # 2. Save survey response in Airtable
-        survey_payload = {
-            "fields": {
-                "Date Submitted": datetime.datetime.now().isoformat(),
-                "Legacy Code": legacy_code,
-                "Q1 Reason for Business": answers[0],
-                "Q2 Time Commitment": answers[1],
-                "Q3 Business Experience": answers[2],
-                "Q4 Startup Readiness": answers[3],
-                "Q5 Confidence Level": answers[4],
-                "Q6 Business Style (GEM)": answers[5],
-                "Prospects": [prospect_id],
-            }
-        }
+        # Save survey answers
+        requests.post(
+            _url(RESPONSES_TABLE),
+            headers=_h(),
+            json={
+                "fields": {
+                    "Date Submitted": datetime.datetime.utcnow().isoformat(),
+                    "Legacy Code": legacy_code,
+                    "Q1 Reason for Business": answers[0],
+                    "Q2 Time Commitment": answers[1],
+                    "Q3 Business Experience": answers[2],
+                    "Q4 Startup Readiness": answers[3],
+                    "Q5 Confidence Level": answers[4],
+                    "Q6 Business Style (GEM)": answers[5],
+                    "Prospects": [prospect_id],
+                }
+            },
+        )
 
-        r3 = requests.post(_url(RESPONSES_TABLE), headers=_h(), json=survey_payload)
-        if r3.status_code == 200:
-            print("✅ Survey saved in Airtable")
-        else:
-            print(f"❌ Airtable Error: {r3.status_code} {r3.text}")
-
-        print("⏱ Starting immediate GHL sync…")
-
-        # 3. Push to GHL and get assigned user ID
         assigned_user_id = push_to_ghl(email, legacy_code, answers, prospect_id)
 
-        # 4. Build redirect URL to Legacy Code Next Step Page
-        base_nextstep = "https://poweredbylegacycode.com/nextstep"
-        if assigned_user_id:
-            redirect_url = f"{base_nextstep}?uid={assigned_user_id}"
-        else:
-            # Fallback: still send them to nextstep without UID
-            print("⚠️ No Assigned User ID. Redirecting without uid parameter.")
-            redirect_url = base_nextstep
+        base = "https://poweredbylegacycode.com/nextstep"
+        redirect_url = f"{base}?uid={assigned_user_id}" if assigned_user_id else base
 
-        print(f"🔁 Redirecting prospect to: {redirect_url}")
-        return redirect(redirect_url, code=302)
+        # ⭐ IFRAME-SAFE REDIRECT ⭐
+        response = redirect(redirect_url, code=302)
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Access-Control-Expose-Headers"] = "Location"
+        response.headers["X-Frame-Options"] = "ALLOWALL"
+
+        return response
 
     except Exception as e:
-        print(f"🔥 Error in /submit: {e}")
+        print("Submit Error:", e)
         return jsonify({"error": str(e)}), 500
 
 # ---------------------------------------------------------
-# 4️⃣ Calendar Route
-#     - Takes GHL User ID
-#     - Looks up in Airtable Users table
-#     - Redirects to that coach's calendar link
+# Calendar Route
 # ---------------------------------------------------------
-@app.route("/calendar/<ghl_user_id>", methods=["GET"])
-def redirect_calendar(ghl_user_id):
+@app.route("/calendar/<ghl_user_id>")
+def calendar_lookup(ghl_user_id):
     try:
-        print(f"📅 Calendar lookup for GHL User ID: {ghl_user_id}")
-
-        # Airtable formula: {GHL User ID} = 'xxxx'
         formula = f"{{GHL User ID}} = '{ghl_user_id}'"
-        params = {"filterByFormula": formula}
-
         r = requests.get(
             _url(USERS_TABLE),
             headers=_h(),
-            params=params
+            params={"filterByFormula": formula},
         )
 
-        if r.status_code != 200:
-            print(f"❌ Airtable Users query failed: {r.status_code} {r.text}")
-            return "Airtable Users query failed", 500
-
         data = r.json()
-        records = data.get("records", [])
+        if not data.get("records"):
+            return "No matching user", 404
 
-        if not records:
-            print("❌ No user found for this GHL User ID in Users table.")
-            return "No user found for this GHL User ID", 404
+        calendar_url = data["records"][0]["fields"].get("Calendar Link")
+        if not calendar_url:
+            return "Calendar missing", 404
 
-        user_record = records[0]
-        fields = user_record.get("fields", {})
-
-        calendar_link = fields.get("Calendar Link")
-
-        if not calendar_link:
-            print("❌ User record found, but no Calendar Link field set.")
-            return "Calendar link not found for this user", 404
-
-        print(f"✅ Redirecting to calendar: {calendar_link}")
-        return redirect(calendar_link, code=302)
+        return redirect(calendar_url)
 
     except Exception as e:
-        print(f"🔥 Error in /calendar route: {e}")
-        return f"Internal error: {str(e)}", 500
+        return f"Error: {e}", 500
 
 # ---------------------------------------------------------
-# Basic Routes
+# App Routes
 # ---------------------------------------------------------
 @app.route("/")
 def index():
@@ -340,13 +248,5 @@ def health():
     return jsonify({"status": "healthy"})
 
 # ---------------------------------------------------------
-# Run Server
-# ---------------------------------------------------------
 if __name__ == "__main__":
-    if not AIRTABLE_API_KEY or not AIRTABLE_BASE_ID:
-        print("❌ Missing Airtable env vars."); exit(1)
-    if not GHL_API_KEY or not GHL_LOCATION_ID:
-        print("❌ Missing GHL env vars."); exit(1)
-
-    print("🚀 Starting Angus Survey Bot — FINAL VERSION (ATRID + GHL User ID + NextStep + Calendar Routing)")
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    app.run(host="0.0.0.0", port=5000)
