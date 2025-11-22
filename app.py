@@ -1,6 +1,5 @@
 # === ANGUS™ Survey Bot — Full Routing Version (Perfect 6 Update) ===
-# EMAIL ONLY VERSION - No phone collection
-# Hardened: Prospect lookup + Airtable hard error surfacing
+# EMAIL ONLY VERSION - Hardened + Correct Q6 field name
 
 from flask import Flask, render_template, request, jsonify
 import requests
@@ -80,7 +79,7 @@ def find_prospect_by_email(email):
     return records[0] if records else None
 
 # ---------------------------------------------------------
-# Create Prospect record + assign Legacy Code (EMAIL ONLY)
+# Create Prospect + Legacy Code (email only)
 # ---------------------------------------------------------
 def create_prospect_and_legacy_code(email):
     payload = {"fields": {"Prospect Email": email}}
@@ -97,7 +96,7 @@ def create_prospect_and_legacy_code(email):
         auto = r2.json().get("fields", {}).get("AutoNum")
 
     if auto is None:
-        raise RuntimeError("AutoNum not found. Ensure Prospects has Auto Number field named 'AutoNum'.")
+        raise RuntimeError("AutoNum not found in Prospects table.")
 
     code_num = 1000 + int(auto)
     legacy_code = f"Legacy-X25-OP{code_num}"
@@ -108,7 +107,7 @@ def create_prospect_and_legacy_code(email):
     return legacy_code, rec_id
 
 # ---------------------------------------------------------
-# Get or Create Prospect + Legacy Code
+# Get or Create Prospect
 # ---------------------------------------------------------
 def get_or_create_prospect(email):
     existing = find_prospect_by_email(email)
@@ -118,7 +117,6 @@ def get_or_create_prospect(email):
         rec_id = existing["id"]
 
         if not legacy_code:
-            # safety: assign if missing
             auto = fields.get("AutoNum")
             if auto is None:
                 r2 = requests.get(_url(HQ_TABLE, rec_id), headers=_h())
@@ -127,17 +125,18 @@ def get_or_create_prospect(email):
             legacy_code = f"Legacy-X25-OP{1000 + int(auto)}"
             requests.patch(_url(HQ_TABLE, rec_id), headers=_h(),
                            json={"fields": {"Legacy Code": legacy_code}})
+
         return legacy_code, rec_id
 
     return create_prospect_and_legacy_code(email)
 
 # ---------------------------------------------------------
-# Push to GHL with assignedUserId (EMAIL ONLY)
+# Push to GHL (email only)
 # ---------------------------------------------------------
 def push_to_ghl(email, legacy_code, answers, record_id):
     try:
         assigned_user_id = get_assigned_user_id(legacy_code)
-        print(f"👤 Found assignedUserId: {assigned_user_id or '❌ None'}")
+        print(f"👤 AssignedUserId: {assigned_user_id or 'None'}")
 
         url = f"{GHL_BASE_URL}/contacts"
         headers = {
@@ -165,28 +164,26 @@ def push_to_ghl(email, legacy_code, answers, record_id):
         r = requests.post(url, headers=headers, json=payload)
 
         if r.status_code == 200:
-            print("✅ Successfully synced to GHL")
+            print("✅ Synced to GHL")
             requests.patch(
                 _url(HQ_TABLE, record_id),
                 headers=_h(),
-                json={"fields": {"Sync Status": "✅ Synced to GHL"}}
+                json={"fields": {"Sync Status": "Synced to GHL"}}
             )
         else:
-            error_msg = f"❌ GHL Error {r.status_code}: {r.text}"
-            print(error_msg)
+            print(f"❌ GHL Error: {r.text}")
             requests.patch(
                 _url(HQ_TABLE, record_id),
                 headers=_h(),
-                json={"fields": {"Sync Status": error_msg}}
+                json={"fields": {"Sync Status": f'GHL ERR {r.status_code}'}}
             )
 
     except Exception as e:
-        error_msg = f"❌ GHL Exception: {str(e)}"
-        print(error_msg)
+        print(f"❌ GHL Exception: {str(e)}")
         requests.patch(
             _url(HQ_TABLE, record_id),
             headers=_h(),
-            json={"fields": {"Sync Status": error_msg}}
+            json={"fields": {"Sync Status": f'GHL EXC {str(e)}'}}
         )
 
 # ---------------------------------------------------------
@@ -204,17 +201,18 @@ def submit():
         answers = data.get("answers") or []
 
         if not email:
-            return jsonify({"status": "error", "error": "Missing email"}), 400
+            return jsonify({"error": "Missing email"}), 400
 
-        print(f"📩 Received survey: {email}, {len(answers)} answers")
+        print(f"📩 Received survey: {email} | {len(answers)} answers")
 
         while len(answers) < 6:
             answers.append("No response provided")
 
-        # ✅ reuse prospect if exists
         legacy_code, prospect_id = get_or_create_prospect(email)
 
-        # ✅ Perfect 6 Airtable field names (exact match)
+        # -----------------------------------------------------
+        # PERFECT 6 — EXACT Airtable Field Names
+        # -----------------------------------------------------
         survey_payload = {
             "fields": {
                 "Date Submitted": datetime.datetime.utcnow().isoformat(),
@@ -225,11 +223,9 @@ def submit():
                 "Q3 Weekly Bandwidth": answers[2],
                 "Q4 Past Goal Killers": answers[3],
                 "Q5 Work Style": answers[4],
-                "Q6 Ready to Follow 90-Day Plan": answers[5],
+                "Q6 Ready to Follow 90-Day Plan?": answers[5],   # <-- FIXED
 
-                # 🔥 If this next field name is off, Airtable will tell us now:
                 "Prospects": [prospect_id],
-
                 "Prospect Email": email
             }
         }
@@ -237,26 +233,24 @@ def submit():
         r3 = requests.post(_url(RESPONSES_TABLE), headers=_h(), json=survey_payload)
 
         if r3.status_code != 200:
-            # HARD FAIL so you see the real field mismatch
-            print(f"❌ Airtable Save Failed {r3.status_code}: {r3.text}")
-            return jsonify({"status": "error", "error": r3.text}), 500
+            print(f"❌ Airtable Error {r3.status_code}: {r3.text}")
+            return jsonify({"error": r3.text}), 500
 
-        print("✅ Saved survey responses to Airtable")
+        print("✅ Saved to Airtable")
 
-        print("⏱ Waiting 60s before GHL sync...")
+        print("⏱ Waiting 60s for GHL sync...")
         time.sleep(60)
 
         push_to_ghl(email, legacy_code, answers, prospect_id)
 
         return jsonify({
             "status": "success",
-            "message": "Survey submitted. GHL sync in progress.",
             "legacy_code": legacy_code
         })
 
     except Exception as e:
-        print(f"🔥 Error in submit: {e}")
-        return jsonify({"error": str(e), "status": "error"}), 500
+        print(f"🔥 Error: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/health")
 def health():
@@ -266,9 +260,5 @@ def health():
 # Main
 # ---------------------------------------------------------
 if __name__ == "__main__":
-    if not AIRTABLE_API_KEY or not AIRTABLE_BASE_ID:
-        print("❌ Missing Airtable env vars")
-        exit(1)
-
-    print("🚀 Starting Angus Survey Bot (Perfect 6 - EMAIL ONLY, hardened)")
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+    print("🚀 ANGUS Perfect 6 Bot • EMAIL ONLY • Fully Corrected")
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
