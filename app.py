@@ -115,7 +115,7 @@ def push_to_ghl(email, legacy_code, answers, record_id):
             # Removed phone field
             "locationId": GHL_LOCATION_ID,
             "customField": {
-                # ✅ Perfect 6 GHL custom field keys
+                # Perfect 6 GHL custom field keys
                 "q1_real_reason_for_change": answers[0],
                 "q2_life_work_starting_point": answers[1],
                 "q3_weekly_bandwidth": answers[2],
@@ -183,7 +183,7 @@ def submit():
         # Create prospect + LC (email only)
         legacy_code, prospect_id = create_prospect_and_legacy_code(email)
 
-        # ✅ Perfect 6 Airtable field names
+        # Perfect 6 Airtable field names
         survey_payload = {
             "fields": {
                 "Date Submitted": datetime.datetime.now().isoformat(),
@@ -238,23 +238,14 @@ if __name__ == "__main__":
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
 ```
 
-### 2. Create a new file called `Procfile` (no extension) in your root directory:
+**ALSO don't forget to:**
+1. Create the `Procfile` (new file, no extension) with exactly this content:
 ```
 web: gunicorn app:app --bind 0.0.0.0:$PORT
 ```
 
-### 3. Make sure `gunicorn` is in your `requirements.txt`:
+2. Make sure your `requirements.txt` has:
 ```
 Flask==2.3.2
 requests==2.31.0
 gunicorn==21.2.0
-```
-
-### Your file structure should be:
-```
-/
-├── app.py
-├── Procfile          <-- NEW FILE
-├── requirements.txt
-└── templates/
-    └── chat.html
