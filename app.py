@@ -236,16 +236,3 @@ if __name__ == "__main__":
 
     print("🚀 Starting Angus Survey Bot (Perfect 6 - EMAIL ONLY)")
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
-```
-
-**ALSO don't forget to:**
-1. Create the `Procfile` (new file, no extension) with exactly this content:
-```
-web: gunicorn app:app --bind 0.0.0.0:$PORT
-```
-
-2. Make sure your `requirements.txt` has:
-```
-Flask==2.3.2
-requests==2.31.0
-gunicorn==21.2.0
