@@ -1,5 +1,5 @@
-# === ANGUS™ Survey Bot — Full Routing Version (Perfect 6 Update) ===
-# EMAIL ONLY VERSION - Hardened + Correct Q6 field name + Removed bad field
+# === ANGUS™ Perfect 6 Screening Bot — EMAIL ONLY — Full Routing + GHL Sync ===
+# Commander-approved final build
 
 from flask import Flask, render_template, request, jsonify
 import requests
@@ -49,25 +49,6 @@ def _url(table, record_id=None, params=None):
     return base
 
 # ---------------------------------------------------------
-# Get assignedUserId from Users table based on legacy code
-# ---------------------------------------------------------
-def get_assigned_user_id(legacy_code):
-    try:
-        formula = f"{{Legacy Code}} = '{legacy_code}'"
-        params = {"filterByFormula": formula, "maxRecords": 1}
-        r = requests.get(_url(USERS_TABLE, params=params), headers=_h())
-        r.raise_for_status()
-
-        records = r.json().get("records", [])
-        if records and "fields" in records[0]:
-            return records[0]["fields"].get("GHL User ID")
-
-    except Exception as e:
-        print(f"⚠ Error retrieving assignedUserId: {e}")
-
-    return None
-
-# ---------------------------------------------------------
 # Find Prospect by email (reuse if exists)
 # ---------------------------------------------------------
 def find_prospect_by_email(email):
@@ -101,13 +82,44 @@ def create_prospect_and_legacy_code(email):
     code_num = 1000 + int(auto)
     legacy_code = f"Legacy-X25-OP{code_num}"
 
-    patch_payload = {"fields": {"Legacy Code": legacy_code}}
-    requests.patch(_url(HQ_TABLE, rec_id), headers=_h(), json=patch_payload)
+    requests.patch(
+        _url(HQ_TABLE, rec_id),
+        headers=_h(),
+        json={"fields": {"Legacy Code": legacy_code}}
+    )
 
-    return legacy_code, rec_id
+    return legacy_code, rec_id, auto
 
 # ---------------------------------------------------------
-# Get or Create Prospect
+# Assign Operator from Users (round-robin)
+# Users fields (exact from your screenshot):
+#   Legacy Code, GHL User ID, Email, Calendar Link
+# ---------------------------------------------------------
+def assign_operator_for_prospect(prospect_auto_num):
+    r = requests.get(_url(USERS_TABLE), headers=_h())
+    r.raise_for_status()
+    users = r.json().get("records", [])
+
+    if not users:
+        return (None, None, None)
+
+    # stable order by operator legacy code
+    users_sorted = sorted(
+        users,
+        key=lambda u: u.get("fields", {}).get("Legacy Code", "")
+    )
+
+    idx = int(prospect_auto_num) % len(users_sorted)
+    chosen = users_sorted[idx].get("fields", {})
+
+    op_legacy_code = chosen.get("Legacy Code")
+    op_email = chosen.get("Email")
+    op_ghl_user_id = chosen.get("GHL User ID")
+
+    return (op_legacy_code, op_email, op_ghl_user_id)
+
+# ---------------------------------------------------------
+# Get or Create Prospect + assign operator if new
 # ---------------------------------------------------------
 def get_or_create_prospect(email):
     existing = find_prospect_by_email(email)
@@ -115,75 +127,122 @@ def get_or_create_prospect(email):
         fields = existing.get("fields", {})
         legacy_code = fields.get("Legacy Code")
         rec_id = existing["id"]
+        auto_num = fields.get("AutoNum")
 
         if not legacy_code:
-            auto = fields.get("AutoNum")
-            if auto is None:
+            if auto_num is None:
                 r2 = requests.get(_url(HQ_TABLE, rec_id), headers=_h())
                 r2.raise_for_status()
-                auto = r2.json().get("fields", {}).get("AutoNum")
-            legacy_code = f"Legacy-X25-OP{1000 + int(auto)}"
-            requests.patch(_url(HQ_TABLE, rec_id), headers=_h(),
-                           json={"fields": {"Legacy Code": legacy_code}})
+                auto_num = r2.json().get("fields", {}).get("AutoNum")
+
+            legacy_code = f"Legacy-X25-OP{1000 + int(auto_num)}"
+            requests.patch(
+                _url(HQ_TABLE, rec_id),
+                headers=_h(),
+                json={"fields": {"Legacy Code": legacy_code}}
+            )
 
         return legacy_code, rec_id
 
-    return create_prospect_and_legacy_code(email)
+    # create new prospect
+    legacy_code, rec_id, auto_num = create_prospect_and_legacy_code(email)
 
-# ---------------------------------------------------------
-# Push to GHL (email only)
-# ---------------------------------------------------------
-def push_to_ghl(email, legacy_code, answers, record_id):
-    try:
-        assigned_user_id = get_assigned_user_id(legacy_code)
-        print(f"👤 AssignedUserId: {assigned_user_id or 'None'}")
+    # assign operator
+    op_legacy, op_email, op_ghl_id = assign_operator_for_prospect(auto_num)
 
-        url = f"{GHL_BASE_URL}/contacts"
-        headers = {
-            "Authorization": f"Bearer {GHL_API_KEY}",
-            "Content-Type": "application/json"
-        }
+    patch_fields = {}
+    if op_ghl_id:
+        patch_fields["GHL User ID"] = op_ghl_id
+    if op_legacy:
+        patch_fields["Assigned Op Legacy Code"] = op_legacy
+    if op_email:
+        patch_fields["Assigned Op Email"] = op_email
 
-        payload = {
-            "email": email,
-            "locationId": GHL_LOCATION_ID,
-            "customField": {
-                "q1_real_reason_for_change": answers[0],
-                "q2_life_work_starting_point": answers[1],
-                "q3_weekly_bandwidth": answers[2],
-                "q4_past_goal_killers": answers[3],
-                "q5_work_style": answers[4],
-                "q6_ready_to_follow_90_day_plan": answers[5],
-                "legacy_code_id": legacy_code
-            }
-        }
-
-        if assigned_user_id:
-            payload["assignedUserId"] = assigned_user_id
-
-        r = requests.post(url, headers=headers, json=payload)
-
-        if r.status_code == 200:
-            print("✅ Synced to GHL")
-            requests.patch(
-                _url(HQ_TABLE, record_id),
-                headers=_h(),
-                json={"fields": {"Sync Status": "Synced to GHL"}}
-            )
-        else:
-            print(f"❌ GHL Error: {r.text}")
-            requests.patch(
-                _url(HQ_TABLE, record_id),
-                headers=_h(),
-                json={"fields": {"Sync Status": f'GHL ERR {r.status_code}'}}
-            )
-
-    except Exception as e:
-        print(f"❌ GHL Exception: {str(e)}")
+    if patch_fields:
         requests.patch(
-            _url(HQ_TABLE, record_id),
+            _url(HQ_TABLE, rec_id),
             headers=_h(),
-            json={"fields": {"Sync Status": f'GHL EXC {str(e)}'}}
+            json={"fields": patch_fields}
+        )
+
+    return legacy_code, rec_id
+
+# ---------------------------------------------------------
+# Push to GHL (lookup -> update/create)
+# ---------------------------------------------------------
+def push_to_ghl(email, legacy_code, answers, prospect_record_id):
+    headers = {
+        "Authorization": f"Bearer {GHL_API_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    # lookup contact by email
+    lookup = requests.get(
+        f"{GHL_BASE_URL}/contacts/lookup",
+        headers=headers,
+        params={"email": email, "locationId": GHL_LOCATION_ID}
+    ).json()
+
+    contact = None
+    if lookup.get("contacts"):
+        contact = lookup["contacts"][0]
+    elif lookup.get("contact"):
+        contact = lookup["contact"]
+
+    # pull assigned user id from Prospects
+    pr = requests.get(_url(HQ_TABLE, prospect_record_id), headers=_h()).json()
+    assigned_user_id = pr.get("fields", {}).get("GHL User ID")
+    assigned_op_email = pr.get("fields", {}).get("Assigned Op Email")
+    assigned_op_legacy = pr.get("fields", {}).get("Assigned Op Legacy Code")
+
+    payload = {
+        "email": email,
+        "locationId": GHL_LOCATION_ID,
+        "customField": {
+            "q1_real_reason_for_change": answers[0],
+            "q2_life_work_starting_point": answers[1],
+            "q3_weekly_bandwidth": answers[2],
+            "q4_past_goal_killers": answers[3],
+            "q5_work_style": answers[4],
+            "q6_ready_to_follow_90_day_plan": answers[5],
+            "legacy_code_id": legacy_code,
+
+            # OPTIONAL (if you created these GHL custom fields)
+            "assigned_op_email": assigned_op_email or "",
+            "assigned_op_legacy_code": assigned_op_legacy or ""
+        }
+    }
+    if assigned_user_id:
+        payload["assignedUserId"] = assigned_user_id
+
+    # update if exists else create
+    if contact and contact.get("id"):
+        cid = contact["id"]
+        r = requests.put(
+            f"{GHL_BASE_URL}/contacts/{cid}",
+            headers=headers,
+            json=payload
+        )
+    else:
+        r = requests.post(
+            f"{GHL_BASE_URL}/contacts",
+            headers=headers,
+            json=payload
+        )
+
+    if r.status_code in (200, 201):
+        print("✅ GHL contact updated/created")
+        requests.patch(
+            _url(HQ_TABLE, prospect_record_id),
+            headers=_h(),
+            json={"fields": {"Sync Status": "✅ Synced to GHL"}}
+        )
+    else:
+        print(f"❌ GHL sync failed: {r.status_code} {r.text}")
+        requests.patch(
+            _url(HQ_TABLE, prospect_record_id),
+            headers=_h(),
+            json={"fields": {"Sync Status": f"GHL ERR {r.status_code}"}}
         )
 
 # ---------------------------------------------------------
@@ -201,17 +260,19 @@ def submit():
         answers = data.get("answers") or []
 
         if not email:
-            return jsonify({"error": "Missing email"}), 400
+            return jsonify({"status": "error", "error": "Missing email"}), 400
 
-        print(f"📩 Received survey: {email} | {len(answers)} answers")
+        print(f"📩 Received survey: {email} | answers={len(answers)}")
 
+        # Guarantee 6 answers
         while len(answers) < 6:
             answers.append("No response provided")
 
+        # Create/reuse prospect + assign op if new
         legacy_code, prospect_id = get_or_create_prospect(email)
 
         # -----------------------------------------------------
-        # PERFECT 6 — EXACT Airtable Field Names
+        # PERFECT 6 — EXACT Airtable Survey Responses fields
         # -----------------------------------------------------
         survey_payload = {
             "fields": {
@@ -226,21 +287,21 @@ def submit():
                 "Q6 Ready to Follow 90-Day Plan?": answers[5],
 
                 "Prospects": [prospect_id]
-                # ❌ Removed: "Prospect Email"
             }
         }
 
         r3 = requests.post(_url(RESPONSES_TABLE), headers=_h(), json=survey_payload)
-
         if r3.status_code != 200:
-            print(f"❌ Airtable Error {r3.status_code}: {r3.text}")
-            return jsonify({"error": r3.text}), 500
+            print(f"❌ Airtable Save Failed {r3.status_code}: {r3.text}")
+            return jsonify({"status": "error", "error": r3.text}), 500
 
-        print("✅ Saved to Airtable")
+        print("✅ Saved Perfect 6 to Airtable")
 
-        print("⏱ Waiting 60s for GHL sync...")
+        # Wait for Airtable/automation stabilization
+        print("⏱ Waiting 60s before GHL sync...")
         time.sleep(60)
 
+        # Push to GHL
         push_to_ghl(email, legacy_code, answers, prospect_id)
 
         return jsonify({
@@ -249,8 +310,8 @@ def submit():
         })
 
     except Exception as e:
-        print(f"🔥 Error: {str(e)}")
-        return jsonify({"error": str(e)}), 500
+        print(f"🔥 Error in submit: {e}")
+        return jsonify({"status": "error", "error": str(e)}), 500
 
 @app.route("/health")
 def health():
@@ -260,5 +321,9 @@ def health():
 # Main
 # ---------------------------------------------------------
 if __name__ == "__main__":
-    print("🚀 ANGUS Perfect 6 Bot • EMAIL ONLY • Fully Corrected (Q6 + Field Fix)")
+    if not AIRTABLE_API_KEY or not AIRTABLE_BASE_ID:
+        print("❌ Missing Airtable env vars")
+        exit(1)
+
+    print("🚀 Starting ANGUS Perfect 6 Bot (EMAIL ONLY • Full Routing)")
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
