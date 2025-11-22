@@ -1,6 +1,5 @@
 # === ANGUS™ Survey Bot — Full Routing Version (Perfect 6 Update) ===
-# Backbone = your FIRST working version (phone + assignedUserId + 60s delay)
-# Only change = new Perfect 6 questions + updated Airtable/GHL fields
+# EMAIL ONLY VERSION - No phone collection
 
 from flask import Flask, render_template, request, jsonify
 import requests
@@ -8,7 +7,6 @@ import datetime
 import os
 import urllib.parse
 import time
-import re
 
 app = Flask(__name__)
 
@@ -48,7 +46,6 @@ def _url(table, record_id=None):
 
 # ---------------------------------------------------------
 # Get assignedUserId from Users table based on legacy code
-# (KEEPING EXACT v1 LOGIC)
 # ---------------------------------------------------------
 def get_assigned_user_id(legacy_code):
     try:
@@ -67,14 +64,13 @@ def get_assigned_user_id(legacy_code):
     return None
 
 # ---------------------------------------------------------
-# Create Prospect record + assign Legacy Code
-# (KEEPING EXACT v1 LOGIC)
+# Create Prospect record + assign Legacy Code (EMAIL ONLY)
 # ---------------------------------------------------------
-def create_prospect_and_legacy_code(email, phone):
+def create_prospect_and_legacy_code(email):
     payload = {
         "fields": {
-            "Prospect Email": email,
-            "Prospect Phone": phone
+            "Prospect Email": email
+            # Removed Prospect Phone field
         }
     }
 
@@ -101,22 +97,10 @@ def create_prospect_and_legacy_code(email, phone):
     return legacy_code, rec_id
 
 # ---------------------------------------------------------
-# Push to GHL with assignedUserId
-# (UPDATED ONLY customField KEYS)
+# Push to GHL with assignedUserId (EMAIL ONLY)
 # ---------------------------------------------------------
-def push_to_ghl(email, phone, legacy_code, answers, record_id):
+def push_to_ghl(email, legacy_code, answers, record_id):
     try:
-        # Clean phone
-        clean_phone = re.sub(r"\D", "", phone or "")
-        if len(clean_phone) == 10:
-            clean_phone = "+1" + clean_phone
-        elif len(clean_phone) == 11 and clean_phone.startswith("1"):
-            clean_phone = "+" + clean_phone
-        elif clean_phone and not clean_phone.startswith("+"):
-            clean_phone = "+" + clean_phone
-
-        print(f"📞 Cleaned phone for GHL: {clean_phone}")
-
         assigned_user_id = get_assigned_user_id(legacy_code)
         print(f"👤 Found assignedUserId: {assigned_user_id or '❌ None'}")
 
@@ -128,18 +112,16 @@ def push_to_ghl(email, phone, legacy_code, answers, record_id):
 
         payload = {
             "email": email,
-            "phone": clean_phone,
+            # Removed phone field
             "locationId": GHL_LOCATION_ID,
             "customField": {
-                # ✅ NEW Perfect 6 GHL custom field keys
+                # ✅ Perfect 6 GHL custom field keys
                 "q1_real_reason_for_change": answers[0],
                 "q2_life_work_starting_point": answers[1],
                 "q3_weekly_bandwidth": answers[2],
                 "q4_past_goal_killers": answers[3],
                 "q5_work_style": answers[4],
                 "q6_ready_to_follow_90_day_plan": answers[5],
-
-                # unchanged legacy code key
                 "legacy_code_id": legacy_code
             }
         }
@@ -189,19 +171,19 @@ def submit():
     try:
         data = request.json
         email = data["email"]
-        phone = data["phone"]
+        # REMOVED phone requirement
         answers = data["answers"]
 
-        print(f"📩 Received survey: {email}, {phone}, {len(answers)} answers")
+        print(f"📩 Received survey: {email}, {len(answers)} answers")
 
         # Guarantee 6 answers
         while len(answers) < 6:
             answers.append("No response provided")
 
-        # Create prospect + LC
-        legacy_code, prospect_id = create_prospect_and_legacy_code(email, phone)
+        # Create prospect + LC (email only)
+        legacy_code, prospect_id = create_prospect_and_legacy_code(email)
 
-        # ✅ NEW Perfect 6 Airtable field names (exact match to your base)
+        # ✅ Perfect 6 Airtable field names
         survey_payload = {
             "fields": {
                 "Date Submitted": datetime.datetime.now().isoformat(),
@@ -227,7 +209,8 @@ def submit():
         print("⏱ Waiting 60s before GHL sync...")
         time.sleep(60)
 
-        push_to_ghl(email, phone, legacy_code, answers, prospect_id)
+        # Push to GHL (email only)
+        push_to_ghl(email, legacy_code, answers, prospect_id)
 
         return jsonify({
             "status": "success",
@@ -251,5 +234,5 @@ if __name__ == "__main__":
         print("❌ Missing Airtable env vars")
         exit(1)
 
-    print("🚀 Starting Angus Survey Bot (Perfect 6 v1 backbone)")
+    print("🚀 Starting Angus Survey Bot (Perfect 6 - EMAIL ONLY)")
     app.run(debug=True, host='0.0.0.0', port=5000)
