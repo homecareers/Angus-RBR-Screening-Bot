@@ -86,19 +86,19 @@
 
   <script>
     const chat = document.getElementById('chat');
-    const BACKEND_URL = "https://YOUR_BACKEND_URL/submit"; // <-- your Railway URL
+    const BACKEND_URL = "/submit"; // <-- Will use relative URL, update if needed
 
     // 🧱 PERFECT 6 (Round 1)
     const surveyFlow = [
       {
-        question: "🔥 **Q1:** What’s the REAL reason you’re exploring a new path right now?",
+        question: "🔥 **Q1:** What's the REAL reason you're exploring a new path right now?",
         options: [
           "💰 Money pressure — I need breathing room",
           "🕊️ I want more freedom + control",
-          "🌪️ I’m craving a fresh start",
-          "😐 I’m not fulfilled where I am",
+          "🌪️ I'm craving a fresh start",
+          "😐 I'm not fulfilled where I am",
           "🏗️ I want to build something that actually lasts",
-          "⚡ Not sure — something in me just says “it’s time”"
+          "⚡ Not sure — something in me just says "it's time""
         ]
       },
       {
@@ -109,7 +109,7 @@
           "🔄 Between jobs / rebuilding",
           "🧪 Running a side hustle",
           "🚀 Running my own business",
-          "✍️ Other / I’ll explain"
+          "✍️ Other / I'll explain"
         ]
       },
       {
@@ -119,18 +119,18 @@
           "5–10 hrs",
           "10–20 hrs",
           "20+ hrs",
-          "🔥 I’ll find the time — this matters"
+          "🔥 I'll find the time — this matters"
         ]
       },
       {
-        question: "🧨 **Q4:** When you’ve tried chasing big goals before… what usually derailed you?",
+        question: "🧨 **Q4:** When you've tried chasing big goals before… what usually derailed you?",
         options: [
           "🧱 No structure",
           "🧑‍🏫 No mentor",
           "🧠 Overthinking",
           "🌊 Life chaos",
           "😬 Confidence dips",
-          "🪞 I’ve never really pursued a big goal before"
+          "🪞 I've never really pursued a big goal before"
         ]
       },
       {
@@ -147,7 +147,7 @@
       {
         question: "⚡ **Q6:** If I map out a personalized 90-day blueprint for you… are you ready to follow it?",
         options: [
-          "✅ Yes — I’m ready now",
+          "✅ Yes — I'm ready now",
           "👍 Yes — if the plan feels doable",
           "🤔 I want to be, but I need clarity first",
           "🧭 Not sure yet — guide me"
@@ -210,7 +210,7 @@
     }
 
     function askForEmail(){
-      showBotMessage("📩 Last thing — what’s the email you used to grab your Real Brick Road™ booklet?");
+      showBotMessage("📩 Last thing — what's the email you used to grab your Real Brick Road™ booklet?");
       chat.innerHTML += `
         <input type="email" id="emailInput" placeholder="Enter your email…"
                onkeydown="if(event.key==='Enter'){saveEmail();}">
@@ -221,7 +221,7 @@
     function saveEmail(){
       const email = document.getElementById("emailInput").value.trim();
       if(!email){
-        showBotMessage("I’ll need your email to lock your Legacy Code. 💛");
+        showBotMessage("I'll need your email to lock your Legacy Code. 💛");
         return;
       }
       userEmail = email;
@@ -240,9 +240,14 @@
       .then(res=>res.json())
       .then(data=>{
         hideLoading();
-        if(data.redirect_url){
-          window.top.location.href = data.redirect_url;
+        if(data.status === "success" && data.legacy_code){
+          // SUCCESS - Show Legacy Code and completion message
+          showBotMessage(`🎯 **BOOM!** Your Legacy Code is locked in:\n\n🔐 **${data.legacy_code}**\n\n✅ Your answers have been saved and will sync to your profile shortly.\n\n🚀 Keep an eye on your email — I'll be sending you your personalized 90-day blueprint soon!\n\nLet's build something legendary together! 🧱⚡`);
+        } else if(data.error) {
+          // ERROR from backend
+          showBotMessage(`⚠️ Oops, hit a snag: ${data.error}\n\nPlease refresh and try again.`);
         } else {
+          // Unexpected response
           showBotMessage("⚠️ Something glitched — refresh and try again.");
         }
       })
@@ -254,9 +259,10 @@
     }
 
     window.selectOption = selectOption;
+    window.saveEmail = saveEmail;
 
     window.onload = function(){
-      showBotMessage("👋 Alright legend — I’m **ANGUS™**.\nLet’s lock in your first bricks so I can map your path with precision. 🧱⚡");
+      showBotMessage("👋 Alright legend — I'm **ANGUS™**.\nLet's lock in your first bricks so I can map your path with precision. 🧱⚡");
       setTimeout(()=> askNext(), 1100);
     };
   </script>
