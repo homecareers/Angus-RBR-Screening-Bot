@@ -235,4 +235,26 @@ if __name__ == "__main__":
         exit(1)
 
     print("🚀 Starting Angus Survey Bot (Perfect 6 - EMAIL ONLY)")
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+```
+
+### 2. Create a new file called `Procfile` (no extension) in your root directory:
+```
+web: gunicorn app:app --bind 0.0.0.0:$PORT
+```
+
+### 3. Make sure `gunicorn` is in your `requirements.txt`:
+```
+Flask==2.3.2
+requests==2.31.0
+gunicorn==21.2.0
+```
+
+### Your file structure should be:
+```
+/
+├── app.py
+├── Procfile          <-- NEW FILE
+├── requirements.txt
+└── templates/
+    └── chat.html
