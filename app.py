@@ -1,5 +1,6 @@
 # === ANGUS™ Survey Bot — Full Routing Version (Perfect 6 Update) ===
 # EMAIL ONLY VERSION - No phone collection
+# Hardened: Prospect lookup + Airtable hard error surfacing
 
 from flask import Flask, render_template, request, jsonify
 import requests
@@ -40,9 +41,13 @@ def _h():
         "Content-Type": "application/json"
     }
 
-def _url(table, record_id=None):
+def _url(table, record_id=None, params=None):
     base = f"https://api.airtable.com/v0/{BASE_ID}/{urllib.parse.quote(table)}"
-    return f"{base}/{record_id}" if record_id else base
+    if record_id:
+        return f"{base}/{record_id}"
+    if params:
+        return f"{base}?{urllib.parse.urlencode(params)}"
+    return base
 
 # ---------------------------------------------------------
 # Get assignedUserId from Users table based on legacy code
@@ -50,8 +55,8 @@ def _url(table, record_id=None):
 def get_assigned_user_id(legacy_code):
     try:
         formula = f"{{Legacy Code}} = '{legacy_code}'"
-        params = {"filterByFormula": formula}
-        r = requests.get(_url(USERS_TABLE), headers=_h(), params=params)
+        params = {"filterByFormula": formula, "maxRecords": 1}
+        r = requests.get(_url(USERS_TABLE, params=params), headers=_h())
         r.raise_for_status()
 
         records = r.json().get("records", [])
@@ -64,15 +69,21 @@ def get_assigned_user_id(legacy_code):
     return None
 
 # ---------------------------------------------------------
+# Find Prospect by email (reuse if exists)
+# ---------------------------------------------------------
+def find_prospect_by_email(email):
+    formula = f"{{Prospect Email}} = '{email}'"
+    params = {"filterByFormula": formula, "maxRecords": 1}
+    r = requests.get(_url(HQ_TABLE, params=params), headers=_h())
+    r.raise_for_status()
+    records = r.json().get("records", [])
+    return records[0] if records else None
+
+# ---------------------------------------------------------
 # Create Prospect record + assign Legacy Code (EMAIL ONLY)
 # ---------------------------------------------------------
 def create_prospect_and_legacy_code(email):
-    payload = {
-        "fields": {
-            "Prospect Email": email
-            # Removed Prospect Phone field
-        }
-    }
+    payload = {"fields": {"Prospect Email": email}}
 
     r = requests.post(_url(HQ_TABLE), headers=_h(), json=payload)
     r.raise_for_status()
@@ -86,7 +97,7 @@ def create_prospect_and_legacy_code(email):
         auto = r2.json().get("fields", {}).get("AutoNum")
 
     if auto is None:
-        raise RuntimeError("AutoNum not found. Ensure Prospects has an Auto Number field named 'AutoNum'.")
+        raise RuntimeError("AutoNum not found. Ensure Prospects has Auto Number field named 'AutoNum'.")
 
     code_num = 1000 + int(auto)
     legacy_code = f"Legacy-X25-OP{code_num}"
@@ -95,6 +106,30 @@ def create_prospect_and_legacy_code(email):
     requests.patch(_url(HQ_TABLE, rec_id), headers=_h(), json=patch_payload)
 
     return legacy_code, rec_id
+
+# ---------------------------------------------------------
+# Get or Create Prospect + Legacy Code
+# ---------------------------------------------------------
+def get_or_create_prospect(email):
+    existing = find_prospect_by_email(email)
+    if existing:
+        fields = existing.get("fields", {})
+        legacy_code = fields.get("Legacy Code")
+        rec_id = existing["id"]
+
+        if not legacy_code:
+            # safety: assign if missing
+            auto = fields.get("AutoNum")
+            if auto is None:
+                r2 = requests.get(_url(HQ_TABLE, rec_id), headers=_h())
+                r2.raise_for_status()
+                auto = r2.json().get("fields", {}).get("AutoNum")
+            legacy_code = f"Legacy-X25-OP{1000 + int(auto)}"
+            requests.patch(_url(HQ_TABLE, rec_id), headers=_h(),
+                           json={"fields": {"Legacy Code": legacy_code}})
+        return legacy_code, rec_id
+
+    return create_prospect_and_legacy_code(email)
 
 # ---------------------------------------------------------
 # Push to GHL with assignedUserId (EMAIL ONLY)
@@ -112,10 +147,8 @@ def push_to_ghl(email, legacy_code, answers, record_id):
 
         payload = {
             "email": email,
-            # Removed phone field
             "locationId": GHL_LOCATION_ID,
             "customField": {
-                # Perfect 6 GHL custom field keys
                 "q1_real_reason_for_change": answers[0],
                 "q2_life_work_starting_point": answers[1],
                 "q3_weekly_bandwidth": answers[2],
@@ -133,16 +166,14 @@ def push_to_ghl(email, legacy_code, answers, record_id):
 
         if r.status_code == 200:
             print("✅ Successfully synced to GHL")
-
             requests.patch(
                 _url(HQ_TABLE, record_id),
                 headers=_h(),
                 json={"fields": {"Sync Status": "✅ Synced to GHL"}}
             )
         else:
-            error_msg = f"❌ Error {r.status_code}: {r.text}"
+            error_msg = f"❌ GHL Error {r.status_code}: {r.text}"
             print(error_msg)
-
             requests.patch(
                 _url(HQ_TABLE, record_id),
                 headers=_h(),
@@ -150,9 +181,8 @@ def push_to_ghl(email, legacy_code, answers, record_id):
             )
 
     except Exception as e:
-        error_msg = f"❌ Exception: {str(e)}"
+        error_msg = f"❌ GHL Exception: {str(e)}"
         print(error_msg)
-
         requests.patch(
             _url(HQ_TABLE, record_id),
             headers=_h(),
@@ -169,24 +199,25 @@ def index():
 @app.route("/submit", methods=["POST"])
 def submit():
     try:
-        data = request.json
-        email = data["email"]
-        # REMOVED phone requirement
-        answers = data["answers"]
+        data = request.json or {}
+        email = (data.get("email") or "").strip()
+        answers = data.get("answers") or []
+
+        if not email:
+            return jsonify({"status": "error", "error": "Missing email"}), 400
 
         print(f"📩 Received survey: {email}, {len(answers)} answers")
 
-        # Guarantee 6 answers
         while len(answers) < 6:
             answers.append("No response provided")
 
-        # Create prospect + LC (email only)
-        legacy_code, prospect_id = create_prospect_and_legacy_code(email)
+        # ✅ reuse prospect if exists
+        legacy_code, prospect_id = get_or_create_prospect(email)
 
-        # Perfect 6 Airtable field names
+        # ✅ Perfect 6 Airtable field names (exact match)
         survey_payload = {
             "fields": {
-                "Date Submitted": datetime.datetime.now().isoformat(),
+                "Date Submitted": datetime.datetime.utcnow().isoformat(),
                 "Legacy Code": legacy_code,
 
                 "Q1 Real Reason for Change": answers[0],
@@ -196,20 +227,25 @@ def submit():
                 "Q5 Work Style": answers[4],
                 "Q6 Ready to Follow 90-Day Plan": answers[5],
 
-                "Prospects": [prospect_id]
+                # 🔥 If this next field name is off, Airtable will tell us now:
+                "Prospects": [prospect_id],
+
+                "Prospect Email": email
             }
         }
 
         r3 = requests.post(_url(RESPONSES_TABLE), headers=_h(), json=survey_payload)
-        if r3.status_code == 200:
-            print("✅ Saved survey responses to Airtable")
-        else:
-            print(f"❌ Error saving responses: {r3.text}")
+
+        if r3.status_code != 200:
+            # HARD FAIL so you see the real field mismatch
+            print(f"❌ Airtable Save Failed {r3.status_code}: {r3.text}")
+            return jsonify({"status": "error", "error": r3.text}), 500
+
+        print("✅ Saved survey responses to Airtable")
 
         print("⏱ Waiting 60s before GHL sync...")
         time.sleep(60)
 
-        # Push to GHL (email only)
         push_to_ghl(email, legacy_code, answers, prospect_id)
 
         return jsonify({
@@ -234,5 +270,5 @@ if __name__ == "__main__":
         print("❌ Missing Airtable env vars")
         exit(1)
 
-    print("🚀 Starting Angus Survey Bot (Perfect 6 - EMAIL ONLY)")
+    print("🚀 Starting Angus Survey Bot (Perfect 6 - EMAIL ONLY, hardened)")
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
