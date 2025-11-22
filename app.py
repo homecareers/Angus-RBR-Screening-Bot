@@ -1,5 +1,5 @@
 # === ANGUS™ Survey Bot — Full Routing Version (Perfect 6 Update) ===
-# EMAIL ONLY VERSION - Hardened + Correct Q6 field name
+# EMAIL ONLY VERSION - Hardened + Correct Q6 field name + Removed bad field
 
 from flask import Flask, render_template, request, jsonify
 import requests
@@ -223,10 +223,10 @@ def submit():
                 "Q3 Weekly Bandwidth": answers[2],
                 "Q4 Past Goal Killers": answers[3],
                 "Q5 Work Style": answers[4],
-                "Q6 Ready to Follow 90-Day Plan?": answers[5],   # <-- FIXED
+                "Q6 Ready to Follow 90-Day Plan?": answers[5],
 
-                "Prospects": [prospect_id],
-                "Prospect Email": email
+                "Prospects": [prospect_id]
+                # ❌ Removed: "Prospect Email"
             }
         }
 
@@ -260,5 +260,5 @@ def health():
 # Main
 # ---------------------------------------------------------
 if __name__ == "__main__":
-    print("🚀 ANGUS Perfect 6 Bot • EMAIL ONLY • Fully Corrected")
+    print("🚀 ANGUS Perfect 6 Bot • EMAIL ONLY • Fully Corrected (Q6 + Field Fix)")
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
