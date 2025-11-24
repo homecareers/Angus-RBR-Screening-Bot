@@ -88,73 +88,74 @@
     const chat = document.getElementById('chat');
     const BACKEND_URL = "https://angus-rbr-screening-bot-production.up.railway.app/submit";
 
-    // 🧱 PERFECT 6 (Round 1)
-    const surveyFlow = [
-      {
-        question: "🔥 **Q1:** What's the REAL reason you're exploring a new path right now?",
-        options: [
-          "💰 Money pressure — I need breathing room",
-          "🕊️ I want more freedom + control",
-          "🌪️ I'm craving a fresh start",
-          "😐 I'm not fulfilled where I am",
-          "🏗️ I want to build something that actually lasts",
-          "⚡ Not sure — something in me just says 'it's time'"
-        ]
-      },
-      {
-        question: "🧭 **Q2:** Where are you in life/work as you step into this? (tell me in your own words if you want)",
-        options: [
-          "👔 Working full-time",
-          "🏡 Stay-at-home parent",
-          "🔄 Between jobs / rebuilding",
-          "🧪 Running a side hustle",
-          "🚀 Running my own business",
-          "✍️ Other / I'll explain"
-        ]
-      },
-      {
-        question: "⏳ **Q3:** How much weekly bandwidth can you commit to building your Legacy?",
-        options: [
-          "3–5 hrs",
-          "5–10 hrs",
-          "10–20 hrs",
-          "20+ hrs",
-          "🔥 I'll find the time — this matters"
-        ]
-      },
-      {
-        question: "🧨 **Q4:** When you've tried chasing big goals before… what usually derailed you?",
-        options: [
-          "🧱 No structure",
-          "🧑‍🏫 No mentor",
-          "🧠 Overthinking",
-          "🌊 Life chaos",
-          "😬 Confidence dips",
-          "🪞 I've never really pursued a big goal before"
-        ]
-      },
-      {
-        question: "💎 **Q5:** What style do you thrive in?",
-        options: [
-          "🗺️ Clear structure",
-          "✅ Step-by-step",
-          "🌿 Freedom/flexibility",
-          "🎯 Accountability",
-          "🤝 Community support",
-          "✍️ Let me describe it"
-        ]
-      },
-      {
-        question: "⚡ **Q6:** If I map out a personalized 90-day blueprint for you… are you ready to follow it?",
-        options: [
-          "✅ Yes — I'm ready now",
-          "👍 Yes — if the plan feels doable",
-          "🤔 I want to be, but I need clarity first",
-          "🧭 Not sure yet — guide me"
-        ]
-      }
-    ];
-
+   // -----------------------------
+// NEW PERFECT 6 QUESTIONS
+// -----------------------------
+const questions = [
+  {
+    question: "🔥 <b>Q1:</b> What's the REAL reason you're exploring a new path right now?",
+    options: [
+      "💰 Money pressure — I need breathing room",
+      "🕊️ I want more freedom + control",
+      "🌪️ I'm craving a fresh start",
+      "😐 I'm not fulfilled where I am",
+      "🏗️ I want to build something that actually lasts",
+      "⚡ Not sure — something in me just says 'it's time'"
+    ]
+  },
+  {
+    question: "🧭 <b>Q2:</b> Where are you in life/work as you step into this?",
+    options: [
+      "👔 Working full-time",
+      "🏡 Stay-at-home parent",
+      "🔄 Between jobs / rebuilding",
+      "🧪 Running a side hustle",
+      "🚀 Running my own business",
+      "✍️ Other / I'll explain"
+    ]
+  },
+  {
+    question: "⏳ <b>Q3:</b> How much weekly bandwidth can you commit to building your Legacy?",
+    options: [
+      "3–5 hrs",
+      "5–10 hrs",
+      "10–20 hrs",
+      "20+ hrs",
+      "🔥 I'll find the time — this matters"
+    ]
+  },
+  {
+    question: "🧨 <b>Q4:</b> When you've tried chasing big goals before… what usually derailed you?",
+    options: [
+      "🧱 No structure",
+      "🧑‍🏫 No mentor",
+      "🧠 Overthinking",
+      "🌊 Life chaos",
+      "😬 Confidence dips",
+      "🪞 I've never really pursued a big goal before"
+    ]
+  },
+  {
+    question: "💎 <b>Q5:</b> What style do you thrive in?",
+    options: [
+      "🗺️ Clear structure",
+      "✅ Step-by-step",
+      "🌿 Freedom/flexibility",
+      "🎯 Accountability",
+      "🤝 Community support",
+      "✍️ Let me describe it"
+    ]
+  },
+  {
+    question: "⚡ <b>Q6:</b> If I map out a personalized 90-day blueprint for you… are you ready to follow it?",
+    options: [
+      "✅ Yes — I'm ready now",
+      "👍 Yes — if the plan feels doable",
+      "🤔 I want to be, but I need clarity first",
+      "🧭 Not sure yet — guide me"
+    ]
+  }
+];
     let answers = [];
     let step = 0;
     let userEmail = "";
