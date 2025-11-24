@@ -13,6 +13,7 @@ AIRTABLE_API_KEY = os.getenv("AIRTABLE_API_KEY")
 AIRTABLE_BASE_ID = os.getenv("AIRTABLE_BASE_ID")
 HQ_TABLE = os.getenv("AIRTABLE_PROSPECTS_TABLE") or "Prospects"
 RESPONSES_TABLE = os.getenv("AIRTABLE_SCREENING_TABLE") or "Survey Responses"
+USERS_TABLE = os.getenv("AIRTABLE_USERS_TABLE") or "Users"  # Add Users table
 
 GHL_API_KEY = os.getenv("GHL_API_KEY")
 GHL_LOCATION_ID = os.getenv("GHL_LOCATION_ID")
@@ -35,6 +36,64 @@ def _url(table, rec_id=None, params=None):
     if params:
         return f"{base}?{urllib.parse.urlencode(params)}"
     return base
+
+
+# ---------------------- NEW: LOOKUP OPERATOR LEGACY CODE ---------------------- #
+def get_operator_legacy_code(ghl_user_id: str):
+    """
+    Look up the GHL User ID in the Users table and return their Legacy Code.
+    """
+    try:
+        # Search Users table for the GHL User ID
+        formula = f"{{GHL User ID}} = '{ghl_user_id}'"
+        search_url = _url(USERS_TABLE, params={"filterByFormula": formula, "maxRecords": 1})
+        
+        r = requests.get(search_url, headers=_h())
+        r.raise_for_status()
+        data = r.json()
+        
+        if data.get("records"):
+            user_record = data["records"][0]
+            # Get the Legacy Code from the user record
+            operator_legacy_code = user_record.get("fields", {}).get("Legacy Code")
+            if operator_legacy_code:
+                print(f"Found operator Legacy Code: {operator_legacy_code} for GHL User ID: {ghl_user_id}")
+                return operator_legacy_code
+            else:
+                print(f"User found but no Legacy Code for GHL User ID: {ghl_user_id}")
+        else:
+            print(f"No user found with GHL User ID: {ghl_user_id}")
+            
+    except Exception as e:
+        print(f"Error looking up operator Legacy Code: {e}")
+    
+    return None
+
+
+# ---------------------- UPDATED: UPDATE PROSPECT WITH OPERATOR INFO ---------------------- #
+def update_prospect_with_operator_info(prospect_id: str, ghl_user_id: str):
+    """
+    Update the Prospect record with GHL User ID and Assigned Op Legacy Code.
+    """
+    try:
+        update_fields = {"GHL User ID": ghl_user_id}
+        
+        # Look up the operator's Legacy Code
+        operator_legacy_code = get_operator_legacy_code(ghl_user_id)
+        if operator_legacy_code:
+            update_fields["Assigned Op Legacy Code"] = operator_legacy_code
+        
+        # Update the Prospect record
+        r = requests.patch(
+            _url(HQ_TABLE, prospect_id),
+            headers=_h(),
+            json={"fields": update_fields}
+        )
+        r.raise_for_status()
+        print(f"Updated Prospect with GHL User ID: {ghl_user_id} and Op Legacy Code: {operator_legacy_code}")
+        
+    except Exception as e:
+        print(f"Error updating prospect with operator info: {e}")
 
 
 # ---------------------- PROSPECT RECORD HANDLING ---------------------- #
@@ -116,7 +175,7 @@ def save_screening_to_airtable(legacy_code: str, prospect_id: str, answers: list
     return r.json().get("id")
 
 
-# ---------------------- SYNC TO GHL (FIXED) ---------------------- #
+# ---------------------- SYNC TO GHL (WITH OPERATOR ASSIGNMENT) ---------------------- #
 def push_screening_to_ghl(email: str, answers: list, legacy_code: str, prospect_id: str):
     """
     Updates the GHL contact record with NEW Q1–Q6 answers + legacy code.
@@ -152,9 +211,6 @@ def push_screening_to_ghl(email: str, answers: list, legacy_code: str, prospect_
             or contact.get("assignedTo")
         )
 
-        # ✅ FIXED: Update custom fields one at a time for reliability
-        # GHL v1 API often has issues with bulk custom field updates
-        
         # First, add the tag
         tag_response = requests.put(
             f"{GHL_BASE_URL}/contacts/{ghl_id}",
@@ -190,36 +246,26 @@ def push_screening_to_ghl(email: str, answers: list, legacy_code: str, prospect_
                 
                 # Log the result
                 if response.status_code == 200:
-                    print(f"✅ Updated {field_name}: {field_value[:30]}...")
+                    print(f"✅ Updated {field_name}: {field_value[:30] if len(str(field_value)) > 30 else field_value}")
                 else:
                     print(f"❌ Failed to update {field_name}: Status {response.status_code}")
-                    print(f"Response: {response.text}")
                     
                     # Try alternative format if first attempt fails
-                    if response.status_code != 200:
-                        alt_response = requests.put(
-                            f"{GHL_BASE_URL}/contacts/{ghl_id}",
-                            headers=headers,
-                            json=field_update  # Try without customField wrapper
-                        )
-                        if alt_response.status_code == 200:
-                            print(f"✅ Updated {field_name} with alt format")
+                    alt_response = requests.put(
+                        f"{GHL_BASE_URL}/contacts/{ghl_id}",
+                        headers=headers,
+                        json=field_update
+                    )
+                    if alt_response.status_code == 200:
+                        print(f"✅ Updated {field_name} with alt format")
                         
             except Exception as e:
                 print(f"Error updating field {field_update}: {e}")
                 continue
         
-        # Also try to update GHL User ID in Airtable if we found one
+        # ✅ NEW: Update Prospect with GHL User ID AND Operator's Legacy Code
         if assigned:
-            try:
-                requests.patch(
-                    _url(HQ_TABLE, prospect_id),
-                    headers=_h(),
-                    json={"fields": {"GHL User ID": assigned}},
-                )
-                print(f"Updated Airtable with GHL User ID: {assigned}")
-            except Exception as e:
-                print(f"Failed to update GHL User ID in Airtable: {e}")
+            update_prospect_with_operator_info(prospect_id, assigned)
         
         return assigned
 
@@ -255,7 +301,7 @@ def submit():
         # Save NEW Q1–Q6 in Airtable
         save_screening_to_airtable(legacy_code, prospect_id, answers)
 
-        # Sync into GHL (with fixed custom field updates)
+        # Sync into GHL (which will also update operator assignment)
         assigned_user_id = push_screening_to_ghl(email, answers, legacy_code, prospect_id)
 
         # Build redirect URL to NextStep
