@@ -183,8 +183,8 @@
           "🎯 Accountability",
           "🤝 Community support",
           "✍️ Let me describe it"
-        ]
-        // NO customInputIndex for Q5 - regular selection only
+        ],
+        customInputIndex: 5  // Last option triggers custom input for Q5
       },
       {
         question: "⚡ <strong>Q6:</strong> If I map out a personalized 90-day blueprint for you… are you ready to follow it?",
@@ -193,8 +193,8 @@
           "👍 Yes — if the plan feels doable",
           "🤔 I want to be, but I need clarity first",
           "🧭 Not sure yet — guide me"
-        ],
-        customInputIndex: 3  // Last option triggers custom input for Q6
+        ]
+        // NO customInputIndex for Q6 - regular selection only
       }
     ];
 
@@ -230,7 +230,7 @@
           let html = "<div class='options'>";
           q.options.forEach((opt, index)=>{
             const esc = opt.replace(/'/g, "\\'");
-            // Check if this option should trigger custom input (only for Q2 and Q6)
+            // Check if this option should trigger custom input (only for Q2 and Q5)
             if(q.customInputIndex !== undefined && index === q.customInputIndex) {
               html += `<button onclick="selectCustomOption('${esc}')">${opt}</button>`;
             } else {
