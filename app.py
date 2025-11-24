@@ -116,7 +116,7 @@ def save_screening_to_airtable(legacy_code: str, prospect_id: str, answers: list
     return r.json().get("id")
 
 
-# ---------------------- SYNC TO GHL ---------------------- #
+# ---------------------- SYNC TO GHL (FIXED) ---------------------- #
 def push_screening_to_ghl(email: str, answers: list, legacy_code: str, prospect_id: str):
     """
     Updates the GHL contact record with NEW Q1–Q6 answers + legacy code.
@@ -128,6 +128,7 @@ def push_screening_to_ghl(email: str, answers: list, legacy_code: str, prospect_
             "Content-Type": "application/json",
         }
 
+        # Lookup contact by email
         lookup = requests.get(
             f"{GHL_BASE_URL}/contacts/lookup",
             headers=headers,
@@ -141,6 +142,7 @@ def push_screening_to_ghl(email: str, answers: list, legacy_code: str, prospect_
             contact = lookup["contact"]
 
         if not contact:
+            print(f"No GHL contact found for email: {email}")
             return None
 
         ghl_id = contact.get("id")
@@ -150,41 +152,79 @@ def push_screening_to_ghl(email: str, answers: list, legacy_code: str, prospect_
             or contact.get("assignedTo")
         )
 
-        update_payload = {
-            "tags": ["legacy screening submitted"],
-            "customField": {
-                # ✅ NEW GHL custom field keys (question-related update)
-                "q1_real_reason_for_change": answers[0],
-                "q2_life_work_starting_point": answers[1],
-                "q3_weekly_bandwidth": answers[2],
-                "q4_past_goal_killers": answers[3],
-                "q5_work_style": answers[4],
-                "q6_ready_to_follow_90_day_plan": answers[5],
-
-                "legacy_code_id": legacy_code,
-            },
-        }
-
-        requests.put(
+        # ✅ FIXED: Update custom fields one at a time for reliability
+        # GHL v1 API often has issues with bulk custom field updates
+        
+        # First, add the tag
+        tag_response = requests.put(
             f"{GHL_BASE_URL}/contacts/{ghl_id}",
             headers=headers,
-            json=update_payload,
+            json={"tags": ["legacy screening submitted"]}
         )
-
-        # Store Airtable Prospect ID inside GHL
-        try:
-            requests.put(
-                f"{GHL_BASE_URL}/contacts/{ghl_id}",
-                headers=headers,
-                json={"customField": {"atrid": prospect_id}},
-            )
-        except:
-            pass
-
+        print(f"Tag update status: {tag_response.status_code}")
+        
+        # Define all custom field updates
+        field_updates = [
+            {"q1_real_reason_for_change": answers[0]},
+            {"q2_life_work_starting_point": answers[1]},
+            {"q3_weekly_bandwidth": answers[2]},
+            {"q4_past_goal_killers": answers[3]},
+            {"q5_work_style": answers[4]},
+            {"q6_ready_to_follow_90_day_plan": answers[5]},
+            {"legacy_code_id": legacy_code},
+            {"atrid": prospect_id}
+        ]
+        
+        # Update each custom field individually
+        for field_update in field_updates:
+            try:
+                field_name = list(field_update.keys())[0]
+                field_value = field_update[field_name]
+                
+                # Send each field update
+                response = requests.put(
+                    f"{GHL_BASE_URL}/contacts/{ghl_id}",
+                    headers=headers,
+                    json={"customField": field_update}
+                )
+                
+                # Log the result
+                if response.status_code == 200:
+                    print(f"✅ Updated {field_name}: {field_value[:30]}...")
+                else:
+                    print(f"❌ Failed to update {field_name}: Status {response.status_code}")
+                    print(f"Response: {response.text}")
+                    
+                    # Try alternative format if first attempt fails
+                    if response.status_code != 200:
+                        alt_response = requests.put(
+                            f"{GHL_BASE_URL}/contacts/{ghl_id}",
+                            headers=headers,
+                            json=field_update  # Try without customField wrapper
+                        )
+                        if alt_response.status_code == 200:
+                            print(f"✅ Updated {field_name} with alt format")
+                        
+            except Exception as e:
+                print(f"Error updating field {field_update}: {e}")
+                continue
+        
+        # Also try to update GHL User ID in Airtable if we found one
+        if assigned:
+            try:
+                requests.patch(
+                    _url(HQ_TABLE, prospect_id),
+                    headers=_h(),
+                    json={"fields": {"GHL User ID": assigned}},
+                )
+                print(f"Updated Airtable with GHL User ID: {assigned}")
+            except Exception as e:
+                print(f"Failed to update GHL User ID in Airtable: {e}")
+        
         return assigned
 
     except Exception as e:
-        print("GHL Screening Sync Error:", e)
+        print(f"GHL Screening Sync Error: {e}")
         return None
 
 
@@ -215,7 +255,7 @@ def submit():
         # Save NEW Q1–Q6 in Airtable
         save_screening_to_airtable(legacy_code, prospect_id, answers)
 
-        # Sync into GHL
+        # Sync into GHL (with fixed custom field updates)
         assigned_user_id = push_screening_to_ghl(email, answers, legacy_code, prospect_id)
 
         # Build redirect URL to NextStep
@@ -227,7 +267,7 @@ def submit():
         return jsonify({"redirect_url": redirect_url})
 
     except Exception as e:
-        print("Submit Error:", e)
+        print(f"Submit Error: {e}")
         return jsonify({"error": str(e)}), 500
 
 
