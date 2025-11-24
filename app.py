@@ -221,12 +221,12 @@ def push_screening_to_ghl(email: str, answers: list, legacy_code: str, prospect_
         
         # Define all custom field updates
         field_updates = [
-            {"q1_real_reason_for_change": answers[0]},
-            {"q2_life_work_starting_point": answers[1]},
-            {"q3_weekly_bandwidth": answers[2]},
-            {"q4_past_goal_killers": answers[3]},
+            {"q1_reason_for_business": answers[0]},
+            {"q2_lifework_starting_point": answers[1]},
+            {"q3_business_experience": answers[2]},
+            {"q4_startup_readiness": answers[3]},
             {"q5_work_style": answers[4]},
-            {"q6_ready_to_follow_90_day_plan": answers[5]},
+            {"q6_business_style_gem": answers[5]},
             {"legacy_code_id": legacy_code},
             {"atrid": prospect_id}
         ]
