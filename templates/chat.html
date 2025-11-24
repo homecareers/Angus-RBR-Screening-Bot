@@ -78,6 +78,7 @@
     }
   </style>
 </head>
+
 <body>
   <div class="wrap">
     <div class="chat-box" id="chat"></div>
@@ -88,74 +89,77 @@
     const chat = document.getElementById('chat');
     const BACKEND_URL = "https://angus-rbr-screening-bot-production.up.railway.app/submit";
 
-// -----------------------------
-// NEW PERFECT 6 QUESTIONS
-// -----------------------------
-const questions = [
-  {
-    question: "🔥 <b>Q1:</b> What's the REAL reason you're exploring a new path right now?",
-    options: [
-      "💰 Money pressure — I need breathing room",
-      "🕊️ I want more freedom + control",
-      "🌪️ I'm craving a fresh start",
-      "😐 I'm not fulfilled where I am",
-      "🏗️ I want to build something that actually lasts",
-      "⚡ Not sure — something in me just says 'it's time'"
-    ]
-  },
-  {
-    question: "🧭 <b>Q2:</b> Where are you in life/work as you step into this?",
-    options: [
-      "👔 Working full-time",
-      "🏡 Stay-at-home parent",
-      "🔄 Between jobs / rebuilding",
-      "🧪 Running a side hustle",
-      "🚀 Running my own business",
-      "✍️ Other / I'll explain"
-    ]
-  },
-  {
-    question: "⏳ <b>Q3:</b> How much weekly bandwidth can you commit to building your Legacy?",
-    options: [
-      "3–5 hrs",
-      "5–10 hrs",
-      "10–20 hrs",
-      "20+ hrs",
-      "🔥 I'll find the time — this matters"
-    ]
-  },
-  {
-    question: "🧨 <b>Q4:</b> When you've tried chasing big goals before… what usually derailed you?",
-    options: [
-      "🧱 No structure",
-      "🧑‍🏫 No mentor",
-      "🧠 Overthinking",
-      "🌊 Life chaos",
-      "😬 Confidence dips",
-      "🪞 I've never really pursued a big goal before"
-    ]
-  },
-  {
-    question: "💎 <b>Q5:</b> What style do you thrive in?",
-    options: [
-      "🗺️ Clear structure",
-      "✅ Step-by-step",
-      "🌿 Freedom/flexibility",
-      "🎯 Accountability",
-      "🤝 Community support",
-      "✍️ Let me describe it"
-    ]
-  },
-  {
-    question: "⚡ <b>Q6:</b> If I map out a personalized 90-day blueprint for you… are you ready to follow it?",
-    options: [
-      "✅ Yes — I'm ready now",
-      "👍 Yes — if the plan feels doable",
-      "🤔 I want to be, but I need clarity first",
-      "🧭 Not sure yet — guide me"
-    ]
-  }
-];
+    // --------------------------------------------
+    // NEW PERFECT 6 QUESTIONS (Commander-Approved)
+    // --------------------------------------------
+    const questions = [
+      {
+        question: "🔥 <b>Q1:</b> What's the REAL reason you're exploring a new path right now?",
+        options: [
+          "💰 Money pressure — I need breathing room",
+          "🕊️ I want more freedom + control",
+          "🌪️ I'm craving a fresh start",
+          "😐 I'm not fulfilled where I am",
+          "🏗️ I want to build something that actually lasts",
+          "⚡ Not sure — something in me just says 'it's time'"
+        ]
+      },
+      {
+        question: "🧭 <b>Q2:</b> Where are you in life/work as you step into this?",
+        options: [
+          "👔 Working full-time",
+          "🏡 Stay-at-home parent",
+          "🔄 Between jobs / rebuilding",
+          "🧪 Running a side hustle",
+          "🚀 Running my own business",
+          "✍️ Other / I'll explain"
+        ]
+      },
+      {
+        question: "⏳ <b>Q3:</b> How much weekly bandwidth can you commit to building your Legacy?",
+        options: [
+          "3–5 hrs",
+          "5–10 hrs",
+          "10–20 hrs",
+          "20+ hrs",
+          "🔥 I'll find the time — this matters"
+        ]
+      },
+      {
+        question: "🧨 <b>Q4:</b> When you've tried chasing big goals before… what usually derailed you?",
+        options: [
+          "🧱 No structure",
+          "🧑‍🏫 No mentor",
+          "🧠 Overthinking",
+          "🌊 Life chaos",
+          "😬 Confidence dips",
+          "🪞 I've never really pursued a big goal before"
+        ]
+      },
+      {
+        question: "💎 <b>Q5:</b> What style do you thrive in?",
+        options: [
+          "🗺️ Clear structure",
+          "✅ Step-by-step",
+          "🌿 Freedom/flexibility",
+          "🎯 Accountability",
+          "🤝 Community support",
+          "✍️ Let me describe it"
+        ]
+      },
+      {
+        question: "⚡ <b>Q6:</b> If I map out a personalized 90-day blueprint for you… are you ready to follow it?",
+        options: [
+          "✅ Yes — I'm ready now",
+          "👍 Yes — if the plan feels doable",
+          "🤔 I want to be, but I need clarity first",
+          "🧭 Not sure yet — guide me"
+        ]
+      }
+    ];
+
+    // 🔥 REQUIRED FIX — THIS LINE WAS MISSING
+    const surveyFlow = questions;
 
     let answers = [];
     let step = 0;
@@ -195,6 +199,7 @@ const questions = [
             html += `<button onclick="selectOption('${esc}')">${opt}</button>`;
           });
           html += "</div>";
+
           chat.innerHTML += html;
           chat.scrollTop = chat.scrollHeight;
         }, 700);
@@ -242,14 +247,14 @@ const questions = [
       .then(res=>res.json())
       .then(data=>{
         hideLoading();
+
         if(data.status === "success" && data.legacy_code){
-          // SUCCESS - Show Legacy Code and completion message
-          showBotMessage(`🎯 **BOOM!** Your Legacy Code is locked in:\n\n🔐 **${data.legacy_code}**\n\n✅ Your answers have been saved and will sync to your profile shortly.\n\n🚀 Keep an eye on your email — I'll be sending you your personalized 90-day blueprint soon!\n\nLet's build something legendary together! 🧱⚡`);
-        } else if(data.error) {
-          // ERROR from backend
+          showBotMessage(`🎯 **BOOM!** Your Legacy Code is locked in:\n\n🔐 **${data.legacy_code}**\n\n🔥 Your answers are saved.\n🚀 Your blueprint is in motion!\n\nLet's build something legendary. 🧱⚡`);
+        } 
+        else if(data.error) {
           showBotMessage(`⚠️ Oops, hit a snag: ${data.error}\n\nPlease refresh and try again.`);
-        } else {
-          // Unexpected response
+        } 
+        else {
           showBotMessage("⚠️ Something glitched — refresh and try again.");
         }
       })
@@ -264,9 +269,10 @@ const questions = [
     window.saveEmail = saveEmail;
 
     window.onload = function(){
-      showBotMessage("👋 Alright legend — I'm **ANGUS™**.\nLet's lock in your first bricks so I can map your path with precision. 🧱⚡");
+      showBotMessage("👋 Alright legend — I'm <b>ANGUS™</b>.\nLet's lock in your first bricks so I can map your path with precision. 🧱⚡");
       setTimeout(()=> askNext(), 1100);
     };
   </script>
+
 </body>
 </html>
