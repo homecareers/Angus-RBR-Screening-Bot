@@ -1,49 +1,80 @@
-# === ANGUS™ Survey Bot — EMAIL ONLY VERSION ===
-# EXACT SAME WORKING LOGIC — ONLY THE 6 QUESTION FIELD MAPPINGS UPDATED
+# 6 questions survey app.py — ORIGINAL WORKING LOGIC
+# ONLY question-related Airtable + GHL mappings updated
 
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, request, jsonify
 import requests
-import datetime
 import os
+import datetime
 import urllib.parse
-import time
+from flask_cors import CORS
 
 app = Flask(__name__)
+CORS(app, resources={r"/*": {"origins": "*"}})
 
-# ---------------------------------------------------------
-# Airtable Credentials / Tables
-# ---------------------------------------------------------
-AIRTABLE_API_KEY = os.getenv('AIRTABLE_API_KEY')
-AIRTABLE_BASE_ID = os.getenv('AIRTABLE_BASE_ID')
-AIRTABLE_RESPONSES_TABLE = os.getenv('AIRTABLE_TABLE_NAME') or "Survey Responses"
-AIRTABLE_PROSPECTS_TABLE = os.getenv('AIRTABLE_PROSPECTS_TABLE') or "Prospects"
-BASE_ID = AIRTABLE_BASE_ID
-HQ_TABLE = AIRTABLE_PROSPECTS_TABLE
-RESPONSES_TABLE = AIRTABLE_RESPONSES_TABLE
+# ---------------------- CONFIG ---------------------- #
+AIRTABLE_API_KEY = os.getenv("AIRTABLE_API_KEY")
+AIRTABLE_BASE_ID = os.getenv("AIRTABLE_BASE_ID")
+HQ_TABLE = os.getenv("AIRTABLE_PROSPECTS_TABLE") or "Prospects"
+RESPONSES_TABLE = os.getenv("AIRTABLE_SCREENING_TABLE") or "Survey Responses"
 
-# ---------------------------------------------------------
-# Airtable Helpers
-# ---------------------------------------------------------
+GHL_API_KEY = os.getenv("GHL_API_KEY")
+GHL_LOCATION_ID = os.getenv("GHL_LOCATION_ID")
+GHL_BASE_URL = "https://rest.gohighlevel.com/v1"
+
+NEXTSTEP_URL = os.getenv("NEXTSTEP_URL") or "https://poweredbylegacycode.com/nextstep"
+
+
 def _h():
     return {
         "Authorization": f"Bearer {AIRTABLE_API_KEY}",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
     }
 
-def _url(table, record_id=None):
-    base = f"https://api.airtable.com/v0/{BASE_ID}/{urllib.parse.quote(table)}"
-    return f"{base}/{record_id}" if record_id else base
 
-# ---------------------------------------------------------
-# Create Prospect record + assign Legacy Code (EMAIL ONLY)
-# ---------------------------------------------------------
-def create_prospect_and_legacy_code(email):
-    payload = {
-        "fields": {
-            "Prospect Email": email
-        }
-    }
+def _url(table, rec_id=None, params=None):
+    base = f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{urllib.parse.quote(table)}"
+    if rec_id:
+        return f"{base}/{rec_id}"
+    if params:
+        return f"{base}?{urllib.parse.urlencode(params)}"
+    return base
 
+
+# ---------------------- PROSPECT RECORD HANDLING ---------------------- #
+def get_or_create_prospect(email: str):
+    """
+    Search for Prospect by email. If exists → return it.
+    If not → create new + assign Legacy Code.
+    """
+    formula = f"{{Prospect Email}} = '{email}'"
+    search_url = _url(HQ_TABLE, params={"filterByFormula": formula, "maxRecords": 1})
+    r = requests.get(search_url, headers=_h())
+    r.raise_for_status()
+    data = r.json()
+
+    # ------------------ FOUND EXISTING PROSPECT ------------------ #
+    if data.get("records"):
+        rec = data["records"][0]
+        rec_id = rec["id"]
+        legacy_code = rec.get("fields", {}).get("Legacy Code")
+
+        # Missing LC? Generate one.
+        if not legacy_code:
+            auto = rec.get("fields", {}).get("AutoNum")
+            if auto is None:
+                r2 = requests.get(_url(HQ_TABLE, rec_id), headers=_h())
+                auto = r2.json().get("fields", {}).get("AutoNum")
+
+            legacy_code = f"Legacy-X25-OP{1000 + int(auto)}"
+            requests.patch(
+                _url(HQ_TABLE, rec_id),
+                headers=_h(),
+                json={"fields": {"Legacy Code": legacy_code}},
+            )
+        return legacy_code, rec_id
+
+    # ------------------ CREATE NEW PROSPECT ------------------ #
+    payload = {"fields": {"Prospect Email": email}}
     r = requests.post(_url(HQ_TABLE), headers=_h(), json=payload)
     r.raise_for_status()
     rec = r.json()
@@ -52,82 +83,155 @@ def create_prospect_and_legacy_code(email):
     auto = rec.get("fields", {}).get("AutoNum")
     if auto is None:
         r2 = requests.get(_url(HQ_TABLE, rec_id), headers=_h())
-        r2.raise_for_status()
         auto = r2.json().get("fields", {}).get("AutoNum")
 
-    if auto is None:
-        raise RuntimeError("AutoNum not found. Ensure Prospects has an Auto Number field named 'AutoNum'.")
-
-    code_num = 1000 + int(auto)
-    legacy_code = f"Legacy-X25-OP{code_num}"
-
-    patch_payload = {"fields": {"Legacy Code": legacy_code}}
-    requests.patch(_url(HQ_TABLE, rec_id), headers=_h(), json=patch_payload)
-
+    legacy_code = f"Legacy-X25-OP{1000 + int(auto)}"
+    requests.patch(
+        _url(HQ_TABLE, rec_id),
+        headers=_h(),
+        json={"fields": {"Legacy Code": legacy_code}},
+    )
     return legacy_code, rec_id
 
-# ---------------------------------------------------------
-# Routes
-# ---------------------------------------------------------
-@app.route("/")
-def index():
-    return render_template("chat.html")
 
+# ---------------------- SAVE SURVEY (Q1–Q6) ---------------------- #
+def save_screening_to_airtable(legacy_code: str, prospect_id: str, answers: list):
+    """
+    Writes NEW Q1–Q6 into the 'Survey Responses' table.
+    Field names MUST match Airtable exactly.
+    """
+    fields = {
+        "Legacy Code": legacy_code,
+        "Prospects": [prospect_id],
+        "Date Submitted": datetime.datetime.utcnow().isoformat(),
+
+        # ✅ NEW Airtable fields (CONFIRMED EXACT)
+        "Q1 Real Reason for Change": answers[0],
+        "Q2 Life/Work Starting Point": answers[1],
+        "Q3 Weekly Bandwidth": answers[2],
+        "Q4 Past Goal Killers": answers[3],
+        "Q5 Work Style": answers[4],
+        "Q6 Ready to Follow 90-Day Plan?": answers[5],
+    }
+
+    r = requests.post(_url(RESPONSES_TABLE), headers=_h(), json={"fields": fields})
+    r.raise_for_status()
+    return r.json().get("id")
+
+
+# ---------------------- SYNC TO GHL ---------------------- #
+def push_screening_to_ghl(email: str, answers: list, legacy_code: str, prospect_id: str):
+    """
+    Updates the GHL contact record with NEW Q1–Q6 answers + legacy code.
+    Returns assigned user ID (coach) for routing.
+    """
+    try:
+        headers = {
+            "Authorization": f"Bearer {GHL_API_KEY}",
+            "Content-Type": "application/json",
+        }
+
+        lookup = requests.get(
+            f"{GHL_BASE_URL}/contacts/lookup",
+            headers=headers,
+            params={"email": email, "locationId": GHL_LOCATION_ID},
+        ).json()
+
+        contact = None
+        if "contacts" in lookup and lookup["contacts"]:
+            contact = lookup["contacts"][0]
+        elif "contact" in lookup:
+            contact = lookup["contact"]
+
+        if not contact:
+            return None
+
+        ghl_id = contact.get("id")
+        assigned = (
+            contact.get("assignedUserId")
+            or contact.get("userId")
+            or contact.get("assignedTo")
+        )
+
+        update_payload = {
+            "tags": ["legacy screening submitted"],
+            "customField": {
+                # ✅ NEW GHL custom field keys (question-related update)
+                "q1_real_reason_for_change": answers[0],
+                "q2_life_work_starting_point": answers[1],
+                "q3_weekly_bandwidth": answers[2],
+                "q4_past_goal_killers": answers[3],
+                "q5_work_style": answers[4],
+                "q6_ready_to_follow_90_day_plan": answers[5],
+
+                "legacy_code_id": legacy_code,
+            },
+        }
+
+        requests.put(
+            f"{GHL_BASE_URL}/contacts/{ghl_id}",
+            headers=headers,
+            json=update_payload,
+        )
+
+        # Store Airtable Prospect ID inside GHL
+        try:
+            requests.put(
+                f"{GHL_BASE_URL}/contacts/{ghl_id}",
+                headers=headers,
+                json={"customField": {"atrid": prospect_id}},
+            )
+        except:
+            pass
+
+        return assigned
+
+    except Exception as e:
+        print("GHL Screening Sync Error:", e)
+        return None
+
+
+# ---------------------- ROUTE: /submit ---------------------- #
 @app.route("/submit", methods=["POST"])
 def submit():
     try:
-        data = request.json
-        email = data["email"]
-        answers = data["answers"]
+        data = request.json or {}
+        email = (data.get("email") or "").strip()
+        answers = data.get("answers") or []
 
-        print(f"📩 Received survey: {email}, {len(answers)} answers")
+        if not email:
+            return jsonify({"error": "Missing email"}), 400
 
+        # Guarantee 6 answers (prevent backend failure)
         while len(answers) < 6:
-            answers.append("No response provided")
+            answers.append("No response")
 
-        legacy_code, prospect_id = create_prospect_and_legacy_code(email)
+        # Create or find Prospect record
+        legacy_code, prospect_id = get_or_create_prospect(email)
 
-        survey_payload = {
-            "fields": {
-                "Date Submitted": datetime.datetime.now().isoformat(),
-                "Legacy Code": legacy_code,
+        # Save NEW Q1–Q6 in Airtable
+        save_screening_to_airtable(legacy_code, prospect_id, answers)
 
-                # IMPORTANT: field names stay EXACTLY as Airtable already has them
-                "Q1 Real Reason for Change": answers[0],
-                "Q2 Life/Work Starting Point": answers[1],
-                "Q3 Weekly Bandwidth": answers[2],
-                "Q4 Past Goal Killers": answers[3],
-                "Q5 Work Style": answers[4],
-                "Q6 Ready to Follow 90-Day Plan?": answers[5],
+        # Sync into GHL
+        assigned_user_id = push_screening_to_ghl(email, answers, legacy_code, prospect_id)
 
-                "Prospects": [prospect_id]
-            }
-        }
+        # Build redirect URL to NextStep
+        if assigned_user_id:
+            redirect_url = f"{NEXTSTEP_URL}?uid={assigned_user_id}"
+        else:
+            redirect_url = NEXTSTEP_URL
 
-        r3 = requests.post(_url(RESPONSES_TABLE), headers=_h(), json=survey_payload)
-        if r3.status_code != 200:
-            print(f"❌ Airtable Error: {r3.text}")
-            return jsonify({"error": r3.text}), 500
-
-        print("✅ Saved survey responses to Airtable")
-
-        return jsonify({
-            "status": "success",
-            "legacy_code": legacy_code
-        })
+        return jsonify({"redirect_url": redirect_url})
 
     except Exception as e:
-        print(f"🔥 Error in submit: {e}")
-        return jsonify({"error": str(e), "status": "error"}), 500
+        print("Submit Error:", e)
+        return jsonify({"error": str(e)}), 500
+
 
 @app.route("/health")
 def health():
     return jsonify({"status": "healthy"})
 
-if __name__ == "__main__":
-    if not AIRTABLE_API_KEY or not AIRTABLE_BASE_ID:
-        print("❌ Missing Airtable env vars")
-        exit(1)
 
-    print("🚀 Starting ANGUS Perfect 6 Bot (EMAIL ONLY)")
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
