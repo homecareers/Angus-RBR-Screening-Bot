@@ -38,10 +38,10 @@ def _url(table, rec_id=None, params=None):
     return base
 
 
-# ---------------------- NEW: LOOKUP OPERATOR LEGACY CODE ---------------------- #
-def get_operator_legacy_code(ghl_user_id: str):
+# ---------------------- UPDATED: LOOKUP OPERATOR INFO (Legacy Code + Email) ---------------------- #
+def get_operator_info(ghl_user_id: str):
     """
-    Look up the GHL User ID in the Users table and return their Legacy Code.
+    Look up the GHL User ID in the Users table and return their Legacy Code AND Email.
     """
     try:
         # Search Users table for the GHL User ID
@@ -54,43 +54,48 @@ def get_operator_legacy_code(ghl_user_id: str):
         
         if data.get("records"):
             user_record = data["records"][0]
-            # Get the Legacy Code from the user record
-            operator_legacy_code = user_record.get("fields", {}).get("Legacy Code")
-            if operator_legacy_code:
-                print(f"Found operator Legacy Code: {operator_legacy_code} for GHL User ID: {ghl_user_id}")
-                return operator_legacy_code
-            else:
-                print(f"User found but no Legacy Code for GHL User ID: {ghl_user_id}")
+            fields = user_record.get("fields", {})
+            
+            # Get both Legacy Code and Email from the user record
+            operator_legacy_code = fields.get("Legacy Code")
+            operator_email = fields.get("Email")  # Adjust field name if different in your Users table
+            
+            print(f"Found operator - Legacy Code: {operator_legacy_code}, Email: {operator_email}")
+            return operator_legacy_code, operator_email
         else:
             print(f"No user found with GHL User ID: {ghl_user_id}")
             
     except Exception as e:
-        print(f"Error looking up operator Legacy Code: {e}")
+        print(f"Error looking up operator info: {e}")
     
-    return None
+    return None, None
 
 
-# ---------------------- UPDATED: UPDATE PROSPECT WITH OPERATOR INFO ---------------------- #
+# ---------------------- UPDATED: UPDATE PROSPECT WITH FULL OPERATOR INFO ---------------------- #
 def update_prospect_with_operator_info(prospect_id: str, ghl_user_id: str):
     """
-    Update the Prospect record with GHL User ID and Assigned Op Legacy Code.
+    Update the Prospect record with GHL User ID, Assigned Op Legacy Code, and Assigned Op Email.
     """
     try:
         update_fields = {"GHL User ID": ghl_user_id}
         
-        # Look up the operator's Legacy Code
-        operator_legacy_code = get_operator_legacy_code(ghl_user_id)
+        # Look up the operator's Legacy Code AND Email
+        operator_legacy_code, operator_email = get_operator_info(ghl_user_id)
+        
         if operator_legacy_code:
             update_fields["Assigned Op Legacy Code"] = operator_legacy_code
         
-        # Update the Prospect record
+        if operator_email:
+            update_fields["Assigned Op Email"] = operator_email
+        
+        # Update the Prospect record with all operator info
         r = requests.patch(
             _url(HQ_TABLE, prospect_id),
             headers=_h(),
             json={"fields": update_fields}
         )
         r.raise_for_status()
-        print(f"Updated Prospect with GHL User ID: {ghl_user_id} and Op Legacy Code: {operator_legacy_code}")
+        print(f"Updated Prospect with GHL User ID: {ghl_user_id}, Op Legacy Code: {operator_legacy_code}, Op Email: {operator_email}")
         
     except Exception as e:
         print(f"Error updating prospect with operator info: {e}")
@@ -219,7 +224,7 @@ def push_screening_to_ghl(email: str, answers: list, legacy_code: str, prospect_
         )
         print(f"Tag update status: {tag_response.status_code}")
         
-        # Define all custom field updates
+        # Define all custom field updates with CORRECT GHL field keys
         field_updates = [
             {"q1_reason_for_business": answers[0]},
             {"q2_lifework_starting_point": answers[1]},
@@ -263,7 +268,7 @@ def push_screening_to_ghl(email: str, answers: list, legacy_code: str, prospect_
                 print(f"Error updating field {field_update}: {e}")
                 continue
         
-        # ✅ NEW: Update Prospect with GHL User ID AND Operator's Legacy Code
+        # ✅ Update Prospect with GHL User ID, Op Legacy Code AND Op Email
         if assigned:
             update_prospect_with_operator_info(prospect_id, assigned)
         
