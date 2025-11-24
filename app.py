@@ -1,7 +1,4 @@
-# 6 questions survey app.py — ORIGINAL WORKING LOGIC
-# ONLY question-related Airtable + GHL mappings updated
-
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
 import requests
 import os
 import datetime
@@ -191,6 +188,12 @@ def push_screening_to_ghl(email: str, answers: list, legacy_code: str, prospect_
         return None
 
 
+# ---------------------- ROUTE: Serve HTML ---------------------- #
+@app.route("/")
+def index():
+    return render_template("chat.html")
+
+
 # ---------------------- ROUTE: /submit ---------------------- #
 @app.route("/submit", methods=["POST"])
 def submit():
@@ -234,4 +237,5 @@ def health():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
