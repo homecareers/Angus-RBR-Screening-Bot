@@ -190,7 +190,8 @@ def push_screening_to_ghl(email: str, answers: list, legacy_code: str, prospect_
             {"q2_lifework_starting_point": answers[1]},
             {"q3_business_experience": answers[2]},
             {"q4_startup_readiness": answers[3]},
-            {"q5_work_style": answers[4]},      # ✅ FIXED Q5
+            {"q5_work_style": answers[4]},
+            {"q6_business_style_gem": answers[5]},
             {"legacy_code_id": legacy_code},
             {"atrid": prospect_id}
         ]
