@@ -102,8 +102,8 @@
   <script>
     const chat = document.getElementById('chat');
 
-    // ✅ FIXED — CLEAN, WORKING BACKEND URL
-    const BACKEND_URL = "https://angus-rbr-screening-bot-production.up.railway.app/submit";
+    // ✅ UPDATED — Use relative URL for submit endpoint
+    const BACKEND_URL = "/submit";
 
     // ----------------------------------------
     // NEW 6 screening questions
@@ -237,7 +237,7 @@
     function saveEmail(){
       const email = document.getElementById("emailInput").value.trim();
       if(!email){
-        showBotMessage("I’ll need your email for your results.");
+        showBotMessage("I'll need your email for your results.");
         return;
       }
       userEmail = email;
@@ -270,9 +270,10 @@
     }
 
     window.selectOption = selectOption;
+    window.saveEmail = saveEmail;
 
     window.onload = function(){
-      showBotMessage("Alright legend — I'm ANGUS™. Let’s lock in the intel so I can map your Legacy Code pathway with precision.");
+      showBotMessage("Alright legend — I'm ANGUS™. Let's lock in the intel so I can map your Legacy Code pathway with precision.");
       setTimeout(()=> askNext(), 1400);
     };
   </script>
