@@ -56,7 +56,7 @@
       transform: translateY(-2px);
       box-shadow: 0 0 18px rgba(212,167,44,0.45);
     }
-    input {
+    input, textarea {
       width: 100%;
       padding: 14px;
       margin-top: 16px;
@@ -66,11 +66,32 @@
       color: #f5f5f5;
       font-size: 16px;
       box-sizing: border-box;
+      font-family: 'Inter', Arial, sans-serif;
     }
-    input:focus {
+    textarea {
+      min-height: 100px;
+      resize: vertical;
+    }
+    input:focus, textarea:focus {
       outline: none;
       border-color: #D4A72C;
       box-shadow: 0 0 10px rgba(212,167,44,0.35);
+    }
+    .submit-btn {
+      background: #D4A72C;
+      color: #050608;
+      padding: 12px 24px;
+      border: none;
+      border-radius: 10px;
+      margin-top: 10px;
+      cursor: pointer;
+      font-size: 16px;
+      font-weight: 600;
+      transition: all 0.22s ease;
+    }
+    .submit-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 0 18px rgba(212,167,44,0.45);
     }
     .loading {
       color: #D4A72C;
@@ -129,7 +150,8 @@
           "🧪 Running a side hustle",
           "🚀 Running my own business",
           "✍️ Other / I'll explain"
-        ]
+        ],
+        customInputIndex: 5  // Last option triggers custom input for Q2
       },
       {
         question: "⏳ <strong>Q3:</strong> How much weekly bandwidth can you commit to building your Legacy?",
@@ -162,6 +184,7 @@
           "🤝 Community support",
           "✍️ Let me describe it"
         ]
+        // NO customInputIndex for Q5 - regular selection only
       },
       {
         question: "⚡ <strong>Q6:</strong> If I map out a personalized 90-day blueprint for you… are you ready to follow it?",
@@ -170,7 +193,8 @@
           "👍 Yes — if the plan feels doable",
           "🤔 I want to be, but I need clarity first",
           "🧭 Not sure yet — guide me"
-        ]
+        ],
+        customInputIndex: 3  // Last option triggers custom input for Q6
       }
     ];
 
@@ -204,9 +228,14 @@
           showBotMessage(`<strong>Question ${step+1} of 6</strong><br><br>${q.question}`);
 
           let html = "<div class='options'>";
-          q.options.forEach(opt=>{
+          q.options.forEach((opt, index)=>{
             const esc = opt.replace(/'/g, "\\'");
-            html += `<button onclick="selectOption('${esc}')">${opt}</button>`;
+            // Check if this option should trigger custom input (only for Q2 and Q6)
+            if(q.customInputIndex !== undefined && index === q.customInputIndex) {
+              html += `<button onclick="selectCustomOption('${esc}')">${opt}</button>`;
+            } else {
+              html += `<button onclick="selectOption('${esc}')">${opt}</button>`;
+            }
           });
           html += "</div>";
           chat.innerHTML += html;
@@ -221,6 +250,41 @@
       document.querySelectorAll(".options").forEach(el=>el.remove());
       showUserMessage(option);
       answers.push(option);
+      step++;
+      setTimeout(askNext, 300);
+    }
+
+    function selectCustomOption(option){
+      document.querySelectorAll(".options").forEach(el=>el.remove());
+      showUserMessage(option);
+      
+      // Show custom input field
+      showBotMessage("Please tell me more:");
+      chat.innerHTML += `
+        <div id="customInputDiv">
+          <textarea id="customInput" placeholder="Type your answer here..."></textarea>
+          <button class="submit-btn" onclick="submitCustomAnswer()">Submit</button>
+        </div>
+      `;
+      document.getElementById("customInput").focus();
+      chat.scrollTop = chat.scrollHeight;
+    }
+
+    function submitCustomAnswer(){
+      const customAnswer = document.getElementById("customInput").value.trim();
+      if(!customAnswer){
+        showBotMessage("Please provide your answer to continue.");
+        return;
+      }
+      
+      // Remove input div
+      document.getElementById("customInputDiv").remove();
+      
+      // Show user's custom answer
+      showUserMessage(customAnswer);
+      
+      // Store the custom answer
+      answers.push(customAnswer);
       step++;
       setTimeout(askNext, 300);
     }
@@ -270,6 +334,8 @@
     }
 
     window.selectOption = selectOption;
+    window.selectCustomOption = selectCustomOption;
+    window.submitCustomAnswer = submitCustomAnswer;
     window.saveEmail = saveEmail;
 
     window.onload = function(){
