@@ -1,100 +1,114 @@
-<!doctype html>
-<html lang="en">
+<!DOCTYPE html>
+<html>
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>ANGUS™ Legacy Code Screening</title>
+  <title>ANGUS™ — Legacy Code Screening</title>
   <style>
-    body{
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
-      background:#0b0f14;
-      color:#e6edf3;
-      margin:0; padding:0;
-      display:flex; justify-content:center;
+    body {
+      font-family: 'Inter', Arial, sans-serif;
+      background: #050608;
+      color: #f5f5f5;
+      margin: 0;
+      padding: 20px;
+      min-height: 100vh;
     }
-    .wrap{ width:100%; max-width:720px; padding:18px;}
-    .chat-box{
-      background:#0f1621;
-      border:1px solid #1f2a3a;
-      border-radius:18px;
-      padding:16px;
-      height:72vh;
-      overflow-y:auto;
-      box-shadow:0 10px 30px rgba(0,0,0,.35);
+    .chat-box {
+      max-width: 680px;
+      margin: 40px auto;
+      background: #0f0f0f;
+      padding: 30px;
+      border-radius: 18px;
+      box-shadow: 0 24px 60px rgba(0,0,0,0.85);
+      border: 1px solid #222;
     }
-    .message{
-      max-width:85%;
-      padding:10px 12px;
-      margin:8px 0;
-      border-radius:14px;
-      line-height:1.35;
-      font-size:16px;
-      white-space:pre-wrap;
+    .message {
+      margin: 16px 0;
+      line-height: 1.6;
+      animation: fadeIn 0.45s ease-in;
     }
-    .bot{
-      background:#151f2e;
-      border:1px solid #22324a;
+    .bot {
+      color: #f5f5f5;
     }
-    .user{
-      background:#1e7bff;
-      color:white;
-      margin-left:auto;
-      border:1px solid #3a8bff;
+    .user {
+      color: #D4A72C;
+      text-align: right;
+      font-weight: 600;
     }
-    .loading{
-      opacity:.7; font-style:italic;
-      background:transparent; border:none;
+    .bot strong {
+      color: #D4A72C;
     }
-    .options{
-      display:flex; flex-wrap:wrap; gap:8px; margin-top:10px;
+    .options button {
+      display: block;
+      width: 100%;
+      padding: 12px 16px;
+      background: #111;
+      color: #f5f5f5;
+      border: 1px solid #D4A72C;
+      border-radius: 10px;
+      margin: 10px 0;
+      text-align: left;
+      cursor: pointer;
+      transition: all 0.22s ease;
+      font-size: 15px;
     }
-    .options button{
-      background:#121a26;
-      border:1px solid #283a55;
-      color:#e6edf3;
-      padding:10px 12px;
-      border-radius:12px;
-      cursor:pointer;
-      transition:.15s;
-      font-size:15px;
+    .options button:hover {
+      background: #D4A72C;
+      color: #050608;
+      transform: translateY(-2px);
+      box-shadow: 0 0 18px rgba(212,167,44,0.45);
     }
-    .options button:hover{
-      transform:translateY(-1px);
-      border-color:#3b82f6;
+    input {
+      width: 100%;
+      padding: 14px;
+      margin-top: 16px;
+      border-radius: 10px;
+      background: #111;
+      border: 2px solid #333;
+      color: #f5f5f5;
+      font-size: 16px;
+      box-sizing: border-box;
     }
-    input[type="email"]{
-      width:100%;
-      margin-top:10px;
-      padding:12px;
-      border-radius:10px;
-      border:1px solid #2a3d58;
-      background:#0b111a;
-      color:#e6edf3;
-      font-size:16px;
-      outline:none;
+    input:focus {
+      outline: none;
+      border-color: #D4A72C;
+      box-shadow: 0 0 10px rgba(212,167,44,0.35);
     }
-    .footer-note{
-      text-align:center; margin-top:8px; opacity:.7; font-size:12px;
+    .loading {
+      color: #D4A72C;
+      font-style: italic;
+    }
+    .loading::after {
+      content: "...";
+      animation: dots 1.5s infinite;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(12px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes dots {
+      0%   { content: ""; }
+      33%  { content: "."; }
+      66%  { content: ".."; }
+      100% { content: "..."; }
+    }
+    @media(max-width:600px) {
+      .chat-box { padding: 22px; margin: 20px auto; }
     }
   </style>
 </head>
 
 <body>
-  <div class="wrap">
-    <div class="chat-box" id="chat"></div>
-    <div class="footer-note">Powered by ANGUS™ • The Real Brick Road™ 🧱</div>
-  </div>
+  <div class="chat-box" id="chat"></div>
 
   <script>
     const chat = document.getElementById('chat');
-    const BACKEND_URL = "https://angus-rbr-screening-bot-production.up.railway.app/submit";
+    const BACKEND_URL = "https://YOUR_BACKEND_URL/submit"; // replace with your Railway URL
 
-    // --------------------------------------------
-    // NEW PERFECT 6 QUESTIONS (Commander-Approved)
-    // --------------------------------------------
-    const questions = [
+    // ----------------------------------------
+    // NEW 6 screening questions (Commander-approved)
+    // ----------------------------------------
+    const surveyFlow = [
       {
-        question: "🔥 <b>Q1:</b> What's the REAL reason you're exploring a new path right now?",
+        question: "🔥 <strong>Q1:</strong> What's the REAL reason you're exploring a new path right now?",
         options: [
           "💰 Money pressure — I need breathing room",
           "🕊️ I want more freedom + control",
@@ -105,7 +119,7 @@
         ]
       },
       {
-        question: "🧭 <b>Q2:</b> Where are you in life/work as you step into this?",
+        question: "🧭 <strong>Q2:</strong> Where are you in life/work as you step into this?",
         options: [
           "👔 Working full-time",
           "🏡 Stay-at-home parent",
@@ -116,7 +130,7 @@
         ]
       },
       {
-        question: "⏳ <b>Q3:</b> How much weekly bandwidth can you commit to building your Legacy?",
+        question: "⏳ <strong>Q3:</strong> How much weekly bandwidth can you commit to building your Legacy?",
         options: [
           "3–5 hrs",
           "5–10 hrs",
@@ -126,7 +140,7 @@
         ]
       },
       {
-        question: "🧨 <b>Q4:</b> When you've tried chasing big goals before… what usually derailed you?",
+        question: "🧨 <strong>Q4:</strong> When you've tried chasing big goals before… what usually derailed you?",
         options: [
           "🧱 No structure",
           "🧑‍🏫 No mentor",
@@ -137,7 +151,7 @@
         ]
       },
       {
-        question: "💎 <b>Q5:</b> What style do you thrive in?",
+        question: "💎 <strong>Q5:</strong> What style do you thrive in?",
         options: [
           "🗺️ Clear structure",
           "✅ Step-by-step",
@@ -148,7 +162,7 @@
         ]
       },
       {
-        question: "⚡ <b>Q6:</b> If I map out a personalized 90-day blueprint for you… are you ready to follow it?",
+        question: "⚡ <strong>Q6:</strong> If I map out a personalized 90-day blueprint for you… are you ready to follow it?",
         options: [
           "✅ Yes — I'm ready now",
           "👍 Yes — if the plan feels doable",
@@ -158,9 +172,6 @@
       }
     ];
 
-    // 🔥 REQUIRED FIX — THIS LINE WAS MISSING
-    const surveyFlow = questions;
-
     let answers = [];
     let step = 0;
     let userEmail = "";
@@ -169,17 +180,14 @@
       chat.innerHTML += `<div class="message bot">${msg}</div>`;
       chat.scrollTop = chat.scrollHeight;
     }
-
     function showUserMessage(msg){
       chat.innerHTML += `<div class="message user">${msg}</div>`;
       chat.scrollTop = chat.scrollHeight;
     }
-
     function showLoading(){
-      chat.innerHTML += `<div class="message loading" id="loading">ANGUS is thinking… 🧠⚡</div>`;
+      chat.innerHTML += `<div class="message loading" id="loading">ANGUS is thinking</div>`;
       chat.scrollTop = chat.scrollHeight;
     }
-
     function hideLoading(){
       const el = document.getElementById('loading');
       if(el) el.remove();
@@ -191,7 +199,7 @@
         setTimeout(()=>{
           hideLoading();
           const q = surveyFlow[step];
-          showBotMessage(`<strong>Question ${step+1} of 6</strong>\n\n${q.question}`);
+          showBotMessage(`<strong>Question ${step+1} of 6</strong><br><br>${q.question}`);
 
           let html = "<div class='options'>";
           q.options.forEach(opt=>{
@@ -199,10 +207,9 @@
             html += `<button onclick="selectOption('${esc}')">${opt}</button>`;
           });
           html += "</div>";
-
           chat.innerHTML += html;
           chat.scrollTop = chat.scrollHeight;
-        }, 700);
+        }, 800);
       } else {
         askForEmail();
       }
@@ -213,14 +220,14 @@
       showUserMessage(option);
       answers.push(option);
       step++;
-      setTimeout(askNext, 250);
+      setTimeout(askNext, 300);
     }
 
     function askForEmail(){
-      showBotMessage("📩 Last thing — what's the email you used to grab your Real Brick Road™ booklet?");
+      showBotMessage("Last thing — what's the email you used to grab your Real Brick Road™ booklet?");
       chat.innerHTML += `
-        <input type="email" id="emailInput" placeholder="Enter your email…"
-               onkeydown="if(event.key==='Enter'){saveEmail();}">
+        <input type="email" id="emailInput" placeholder="Enter your email..."
+          onkeydown="if(event.key==='Enter'){saveEmail();}">
       `;
       document.getElementById("emailInput").focus();
     }
@@ -228,7 +235,7 @@
     function saveEmail(){
       const email = document.getElementById("emailInput").value.trim();
       if(!email){
-        showBotMessage("I'll need your email to lock your Legacy Code. 💛");
+        showBotMessage("I’ll need your email for your results.");
         return;
       }
       userEmail = email;
@@ -242,37 +249,30 @@
       fetch(BACKEND_URL, {
         method: "POST",
         headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({ email: userEmail, answers })
+        body: JSON.stringify({email:userEmail, answers:answers})
       })
       .then(res=>res.json())
       .then(data=>{
         hideLoading();
-
-        if(data.status === "success" && data.legacy_code){
-          showBotMessage(`🎯 **BOOM!** Your Legacy Code is locked in:\n\n🔐 **${data.legacy_code}**\n\n🔥 Your answers are saved.\n🚀 Your blueprint is in motion!\n\nLet's build something legendary. 🧱⚡`);
-        } 
-        else if(data.error) {
-          showBotMessage(`⚠️ Oops, hit a snag: ${data.error}\n\nPlease refresh and try again.`);
-        } 
-        else {
-          showBotMessage("⚠️ Something glitched — refresh and try again.");
+        if(data.redirect_url){
+          window.top.location.href = data.redirect_url;
+        } else {
+          showBotMessage("Something glitched — refresh and try again.");
         }
       })
       .catch(err=>{
         console.error(err);
         hideLoading();
-        showBotMessage("🚨 Server issue. Refresh and try again.");
+        showBotMessage("Server issue. Refresh and try again.");
       });
     }
 
     window.selectOption = selectOption;
-    window.saveEmail = saveEmail;
 
     window.onload = function(){
-      showBotMessage("👋 Alright legend — I'm <b>ANGUS™</b>.\nLet's lock in your first bricks so I can map your path with precision. 🧱⚡");
-      setTimeout(()=> askNext(), 1100);
+      showBotMessage("Alright legend — I'm ANGUS™. Let’s lock in the intel so I can map your Legacy Code pathway with precision.");
+      setTimeout(()=> askNext(), 1400);
     };
   </script>
-
 </body>
 </html>
