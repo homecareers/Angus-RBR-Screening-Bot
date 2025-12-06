@@ -226,14 +226,14 @@ def push_screening_to_ghl(email: str, answers: list, legacy_code: str, prospect_
         
         # Define all custom field updates with CORRECT GHL field keys
         field_updates = [
-            {"q1_reason_for_business": answers[0]},
-            {"q2_lifework_starting_point": answers[1]},
-            {"q3_business_experience": answers[2]},
-            {"q4_startup_readiness": answers[3]},
-            {"q5_work_style": answers[4]},
-            {"q6_business_style_gem": answers[5]},
-            {"legacy_code_id": legacy_code},
-            {"atrid": prospect_id}
+            {"UNyQ5ZdjLihqjycS22lc": answers[0]},  # Q1
+            {"lDkz6Qsg5ZjLMAXaK381": answers[1]},  # Q2
+            {"LQkf4Bzx5ZW8y3aPF6b7": answers[2]},  # Q3
+            {"Vk3oIWdHChpQPlX201fZ": answers[3]},  # Q4
+            {"dCDnpK3iAY3k8prEmJs7": answers[4]},  # Q5
+            {"4MwUuyWamknHDzYeko6L": answers[5]},  # Q6
+            {"legacy_code_id": legacy_code},       # unchanged
+            {"atrid": prospect_id}                 # unchanged
         ]
         
         # Update each custom field individually
