@@ -183,8 +183,8 @@ def save_screening_to_airtable(legacy_code: str, prospect_id: str, answers: list
 # ---------------------- SYNC TO GHL (WITH OPERATOR ASSIGNMENT) ---------------------- #
 def push_screening_to_ghl(email: str, answers: list, legacy_code: str, prospect_id: str):
     """
-    Updates the GHL contact record with NEW Q1–Q6 answers + legacy code.
-    Returns assigned user ID (coach) for routing.
+    Updates the GHL contact record with NEW Q1–Q6 answers + legacy code + atrid
+    using a single batch update. Returns assigned user ID (coach) for routing.
     """
     try:
         headers = {
@@ -216,58 +216,39 @@ def push_screening_to_ghl(email: str, answers: list, legacy_code: str, prospect_
             or contact.get("assignedTo")
         )
 
-        # First, add the tag
+        # First, add the tag (same as before)
         tag_response = requests.put(
             f"{GHL_BASE_URL}/contacts/{ghl_id}",
             headers=headers,
             json={"tags": ["legacy screening submitted"]}
         )
         print(f"Tag update status: {tag_response.status_code}")
-        
-        # Define all custom field updates with CORRECT GHL field keys
-        field_updates = [
-            {"UNyQ5ZdjLihqjycS22lc": answers[0]},  # Q1
-            {"lDkz6Qsg5ZjLMAXaK381": answers[1]},  # Q2
-            {"LQkf4Bzx5ZW8y3aPF6b7": answers[2]},  # Q3
-            {"Vk3oIWdHChpQPlX201fZ": answers[3]},  # Q4
-            {"dCDnpK3iAY3k8prEmJs7": answers[4]},  # Q5
-            {"4MwUuyWamknHDzYeko6L": answers[5]},  # Q6
-            {"legacy_code_id": legacy_code},       # unchanged
-            {"atrid": prospect_id}                 # unchanged
-        ]
-        
-        # Update each custom field individually
-        for field_update in field_updates:
-            try:
-                field_name = list(field_update.keys())[0]
-                field_value = field_update[field_name]
-                
-                # Send each field update
-                response = requests.put(
-                    f"{GHL_BASE_URL}/contacts/{ghl_id}",
-                    headers=headers,
-                    json={"customField": field_update}
-                )
-                
-                # Log the result
-                if response.status_code == 200:
-                    print(f"✅ Updated {field_name}: {field_value[:30] if len(str(field_value)) > 30 else field_value}")
-                else:
-                    print(f"❌ Failed to update {field_name}: Status {response.status_code}")
-                    
-                    # Try alternative format if first attempt fails
-                    alt_response = requests.put(
-                        f"{GHL_BASE_URL}/contacts/{ghl_id}",
-                        headers=headers,
-                        json=field_update
-                    )
-                    if alt_response.status_code == 200:
-                        print(f"✅ Updated {field_name} with alt format")
-                        
-            except Exception as e:
-                print(f"Error updating field {field_update}: {e}")
-                continue
-        
+
+        # 🔥 Single batch update with TRUE API field IDs for Q1–Q6
+        custom_fields = {
+            "UNyQ5ZdjLihqjycS22lc": answers[0],  # Q1
+            "lDkz6Qsg5ZjLMAXaK381": answers[1],  # Q2
+            "LQkf4Bzx5ZW8y3aPF6b7": answers[2],  # Q3
+            "Vk3oIWdHChpQPlX201fZ": answers[3],  # Q4
+            "dCDnpK3iAY3k8prEmJs7": answers[4],  # Q5
+            "4MwUuyWamknHDzYeko6L": answers[5],  # Q6
+            "legacy_code_id": legacy_code,
+            "atrid": prospect_id,
+        }
+
+        payload = {"customField": custom_fields}
+
+        print(f"📦 Sending batch update to GHL for contact {ghl_id}")
+        batch_response = requests.put(
+            f"{GHL_BASE_URL}/contacts/{ghl_id}",
+            headers=headers,
+            json=payload
+        )
+
+        print(f"📊 Batch update status: {batch_response.status_code}")
+        if batch_response.status_code != 200:
+            print(f"❌ Batch update response: {batch_response.text[:500]}")
+
         # ✅ Update Prospect with GHL User ID, Op Legacy Code AND Op Email
         if assigned:
             update_prospect_with_operator_info(prospect_id, assigned)
