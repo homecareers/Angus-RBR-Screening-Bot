@@ -152,8 +152,12 @@ def save_screening_to_airtable(legacy_code: str, prospect_id: str, answers: list
     return r.json().get("id")
 
 
-# ---------------------- GHL SYNC — TRUE BATCH FORMAT ---------------------- #
+# ---------------------- GHL SYNC (Hybrid) ---------------------- #
 def push_screening_to_ghl(email: str, answers: list, legacy_code: str, prospect_id: str):
+    """
+    Q1–Q6 via batch (IDs).
+    legacy_code_id + atrid via old, proven per-field method.
+    """
     try:
         headers = {
             "Authorization": f"Bearer {GHL_API_KEY}",
@@ -183,7 +187,7 @@ def push_screening_to_ghl(email: str, answers: list, legacy_code: str, prospect_
             or contact.get("assignedTo")
         )
 
-        # add tag
+        # tag
         tag_response = requests.put(
             f"{GHL_BASE_URL}/contacts/{ghl_id}",
             headers=headers,
@@ -191,9 +195,7 @@ def push_screening_to_ghl(email: str, answers: list, legacy_code: str, prospect_
         )
         print(f"Tag update status: {tag_response.status_code}")
 
-        # -----------------------
-        # TRUE BATCH PAYLOAD
-        # -----------------------
+        # ---------- BATCH: Q1–Q6 ----------
         custom_fields_payload = [
             {"id": "UNyQ5ZdjLihqjycS22lc", "value": answers[0]},  # Q1
             {"id": "lDkz6Qsg5ZjLMAXaK381", "value": answers[1]},  # Q2
@@ -201,31 +203,73 @@ def push_screening_to_ghl(email: str, answers: list, legacy_code: str, prospect_
             {"id": "Vk3oIWdHChpQPlX201fZ", "value": answers[3]},  # Q4
             {"id": "dCDnpK3iAY3k8prEmJs7", "value": answers[4]},  # Q5
             {"id": "4MwUuyWamknHDzYeko6L", "value": answers[5]},  # Q6
-            {"id": "legacy_code_id", "value": legacy_code},
-            {"id": "atrid", "value": prospect_id},
         ]
 
-        print("------ SENDING CUSTOM FIELDS TO GHL ------")
+        print("------ SENDING Q1–Q6 CUSTOM FIELDS TO GHL ------")
         for f in custom_fields_payload:
             print(f"Field ID: {f['id']} | Value: {str(f['value'])[:60]}")
-        print("-------------------------------------------")
+        print("------------------------------------------------")
 
         payload = {"customFields": custom_fields_payload}
 
-        print(f"📦 Sending TRUE batch update to GHL for contact {ghl_id}")
+        print(f"📦 Sending Q1–Q6 batch update to GHL for contact {ghl_id}")
         batch_response = requests.put(
             f"{GHL_BASE_URL}/contacts/{ghl_id}",
             headers=headers,
             json=payload
         )
 
-        print(f"📊 Batch update status: {batch_response.status_code}")
+        print(f"📊 Q1–Q6 batch status: {batch_response.status_code}")
         if batch_response.status_code != 200:
-            print("❌ Batch update failed:")
+            print("❌ Q1–Q6 batch failed:")
             print(batch_response.text[:500])
         else:
-            print("✅ Batch update SUCCESS")
+            print("✅ Q1–Q6 batch SUCCESS")
 
+        # ---------- LEGACY CODE + ATRID (old, proven method) ----------
+        field_updates = [
+            {"legacy_code_id": legacy_code},
+            {"atrid": prospect_id},
+        ]
+
+        for field_update in field_updates:
+            try:
+                field_name = list(field_update.keys())[0]
+                field_value = field_update[field_name]
+
+                print(f"➡ Updating {field_name} via legacy method")
+
+                # primary format
+                response = requests.put(
+                    f"{GHL_BASE_URL}/contacts/{ghl_id}",
+                    headers=headers,
+                    json={"customField": field_update}
+                )
+
+                if response.status_code == 200:
+                    print(f"✅ {field_name} updated (primary) -> {str(field_value)[:60]}")
+                    continue
+                else:
+                    print(f"⚠️ {field_name} primary failed: {response.status_code}")
+
+                # fallback format
+                alt_response = requests.put(
+                    f"{GHL_BASE_URL}/contacts/{ghl_id}",
+                    headers=headers,
+                    json=field_update
+                )
+
+                if alt_response.status_code == 200:
+                    print(f"✅ {field_name} updated (fallback)")
+                else:
+                    print(f"❌ {field_name} fallback failed: {alt_response.status_code}")
+                    print(alt_response.text[:300])
+
+            except Exception as e:
+                print(f"Error updating field {field_update}: {e}")
+                continue
+
+        # operator info
         if assigned:
             update_prospect_with_operator_info(prospect_id, assigned)
 
