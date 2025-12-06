@@ -13,7 +13,7 @@ AIRTABLE_API_KEY = os.getenv("AIRTABLE_API_KEY")
 AIRTABLE_BASE_ID = os.getenv("AIRTABLE_BASE_ID")
 HQ_TABLE = os.getenv("AIRTABLE_PROSPECTS_TABLE") or "Prospects"
 RESPONSES_TABLE = os.getenv("AIRTABLE_SCREENING_TABLE") or "Survey Responses"
-USERS_TABLE = os.getenv("AIRTABLE_USERS_TABLE") or "Users"  # Add Users table
+USERS_TABLE = os.getenv("AIRTABLE_USERS_TABLE") or "Users"
 
 GHL_API_KEY = os.getenv("GHL_API_KEY")
 GHL_LOCATION_ID = os.getenv("GHL_LOCATION_ID")
@@ -22,12 +22,12 @@ GHL_BASE_URL = "https://rest.gohighlevel.com/v1"
 NEXTSTEP_URL = os.getenv("NEXTSTEP_URL") or "https://poweredbylegacycode.com/nextstep"
 
 
+# ---------------------- HELPERS ---------------------- #
 def _h():
     return {
         "Authorization": f"Bearer {AIRTABLE_API_KEY}",
         "Content-Type": "application/json",
     }
-
 
 def _url(table, rec_id=None, params=None):
     base = f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{urllib.parse.quote(table)}"
@@ -38,93 +38,70 @@ def _url(table, rec_id=None, params=None):
     return base
 
 
-# ---------------------- UPDATED: LOOKUP OPERATOR INFO (Legacy Code + Email) ---------------------- #
+# ---------------------- OPERATOR LOOKUP ---------------------- #
 def get_operator_info(ghl_user_id: str):
-    """
-    Look up the GHL User ID in the Users table and return their Legacy Code AND Email.
-    """
     try:
-        # Search Users table for the GHL User ID
         formula = f"{{GHL User ID}} = '{ghl_user_id}'"
         search_url = _url(USERS_TABLE, params={"filterByFormula": formula, "maxRecords": 1})
-        
+
         r = requests.get(search_url, headers=_h())
         r.raise_for_status()
         data = r.json()
-        
+
         if data.get("records"):
-            user_record = data["records"][0]
-            fields = user_record.get("fields", {})
-            
-            # Get both Legacy Code and Email from the user record
-            operator_legacy_code = fields.get("Legacy Code")
-            operator_email = fields.get("Email")  # Adjust field name if different in your Users table
-            
-            print(f"Found operator - Legacy Code: {operator_legacy_code}, Email: {operator_email}")
-            return operator_legacy_code, operator_email
-        else:
-            print(f"No user found with GHL User ID: {ghl_user_id}")
-            
+            fields = data["records"][0].get("fields", {})
+            return fields.get("Legacy Code"), fields.get("Email")
+
     except Exception as e:
         print(f"Error looking up operator info: {e}")
-    
+
     return None, None
 
 
-# ---------------------- UPDATED: UPDATE PROSPECT WITH FULL OPERATOR INFO ---------------------- #
 def update_prospect_with_operator_info(prospect_id: str, ghl_user_id: str):
-    """
-    Update the Prospect record with GHL User ID, Assigned Op Legacy Code, and Assigned Op Email.
-    """
     try:
         update_fields = {"GHL User ID": ghl_user_id}
-        
-        # Look up the operator's Legacy Code AND Email
-        operator_legacy_code, operator_email = get_operator_info(ghl_user_id)
-        
-        if operator_legacy_code:
-            update_fields["Assigned Op Legacy Code"] = operator_legacy_code
-        
-        if operator_email:
-            update_fields["Assigned Op Email"] = operator_email
-        
-        # Update the Prospect record with all operator info
+
+        op_legacy_code, op_email = get_operator_info(ghl_user_id)
+
+        if op_legacy_code:
+            update_fields["Assigned Op Legacy Code"] = op_legacy_code
+
+        if op_email:
+            update_fields["Assigned Op Email"] = op_email
+
         r = requests.patch(
             _url(HQ_TABLE, prospect_id),
             headers=_h(),
             json={"fields": update_fields}
         )
         r.raise_for_status()
-        print(f"Updated Prospect with GHL User ID: {ghl_user_id}, Op Legacy Code: {operator_legacy_code}, Op Email: {operator_email}")
-        
+
+        print(f"Updated Prospect with GHL User ID: {ghl_user_id}, Op Legacy Code: {op_legacy_code}, Op Email: {op_email}")
+
     except Exception as e:
         print(f"Error updating prospect with operator info: {e}")
 
 
-# ---------------------- PROSPECT RECORD HANDLING ---------------------- #
+# ---------------------- PROSPECT HANDLING ---------------------- #
 def get_or_create_prospect(email: str):
-    """
-    Search for Prospect by email. If exists → return it.
-    If not → create new + assign Legacy Code.
-    """
     formula = f"{{Prospect Email}} = '{email}'"
     search_url = _url(HQ_TABLE, params={"filterByFormula": formula, "maxRecords": 1})
     r = requests.get(search_url, headers=_h())
     r.raise_for_status()
     data = r.json()
 
-    # ------------------ FOUND EXISTING PROSPECT ------------------ #
     if data.get("records"):
         rec = data["records"][0]
         rec_id = rec["id"]
-        legacy_code = rec.get("fields", {}).get("Legacy Code")
+        fields = rec.get("fields", {})
+        legacy_code = fields.get("Legacy Code")
 
-        # Missing LC? Generate one.
         if not legacy_code:
-            auto = rec.get("fields", {}).get("AutoNum")
+            auto = fields.get("AutoNum")
             if auto is None:
-                r2 = requests.get(_url(HQ_TABLE, rec_id), headers=_h())
-                auto = r2.json().get("fields", {}).get("AutoNum")
+                auto_data = requests.get(_url(HQ_TABLE, rec_id), headers=_h()).json()
+                auto = auto_data.get("fields", {}).get("AutoNum")
 
             legacy_code = f"Legacy-X25-OP{1000 + int(auto)}"
             requests.patch(
@@ -132,9 +109,9 @@ def get_or_create_prospect(email: str):
                 headers=_h(),
                 json={"fields": {"Legacy Code": legacy_code}},
             )
+
         return legacy_code, rec_id
 
-    # ------------------ CREATE NEW PROSPECT ------------------ #
     payload = {"fields": {"Prospect Email": email}}
     r = requests.post(_url(HQ_TABLE), headers=_h(), json=payload)
     r.raise_for_status()
@@ -143,8 +120,8 @@ def get_or_create_prospect(email: str):
 
     auto = rec.get("fields", {}).get("AutoNum")
     if auto is None:
-        r2 = requests.get(_url(HQ_TABLE, rec_id), headers=_h())
-        auto = r2.json().get("fields", {}).get("AutoNum")
+        auto_data = requests.get(_url(HQ_TABLE, rec_id), headers=_h()).json()
+        auto = auto_data.get("fields", {}).get("AutoNum")
 
     legacy_code = f"Legacy-X25-OP{1000 + int(auto)}"
     requests.patch(
@@ -152,21 +129,16 @@ def get_or_create_prospect(email: str):
         headers=_h(),
         json={"fields": {"Legacy Code": legacy_code}},
     )
+
     return legacy_code, rec_id
 
 
-# ---------------------- SAVE SURVEY (Q1–Q6) ---------------------- #
+# ---------------------- SAVE FIRST SURVEY (Q1–Q6) ---------------------- #
 def save_screening_to_airtable(legacy_code: str, prospect_id: str, answers: list):
-    """
-    Writes NEW Q1–Q6 into the 'Survey Responses' table.
-    Field names MUST match Airtable exactly.
-    """
     fields = {
         "Legacy Code": legacy_code,
         "Prospects": [prospect_id],
         "Date Submitted": datetime.datetime.utcnow().isoformat(),
-
-        # ✅ NEW Airtable fields (CONFIRMED EXACT)
         "Q1 Real Reason for Change": answers[0],
         "Q2 Life/Work Starting Point": answers[1],
         "Q3 Weekly Bandwidth": answers[2],
@@ -180,19 +152,14 @@ def save_screening_to_airtable(legacy_code: str, prospect_id: str, answers: list
     return r.json().get("id")
 
 
-# ---------------------- SYNC TO GHL (WITH OPERATOR ASSIGNMENT) ---------------------- #
+# ---------------------- GHL SYNC — TRUE BATCH FORMAT ---------------------- #
 def push_screening_to_ghl(email: str, answers: list, legacy_code: str, prospect_id: str):
-    """
-    Updates the GHL contact record with NEW Q1–Q6 answers + legacy code + atrid
-    using a single batch update. Returns assigned user ID (coach) for routing.
-    """
     try:
         headers = {
             "Authorization": f"Bearer {GHL_API_KEY}",
             "Content-Type": "application/json",
         }
 
-        # Lookup contact by email
         lookup = requests.get(
             f"{GHL_BASE_URL}/contacts/lookup",
             headers=headers,
@@ -206,7 +173,7 @@ def push_screening_to_ghl(email: str, answers: list, legacy_code: str, prospect_
             contact = lookup["contact"]
 
         if not contact:
-            print(f"No GHL contact found for email: {email}")
+            print(f"❌ No GHL contact found for email: {email}")
             return None
 
         ghl_id = contact.get("id")
@@ -216,7 +183,7 @@ def push_screening_to_ghl(email: str, answers: list, legacy_code: str, prospect_
             or contact.get("assignedTo")
         )
 
-        # First, add the tag (same as before)
+        # add tag
         tag_response = requests.put(
             f"{GHL_BASE_URL}/contacts/{ghl_id}",
             headers=headers,
@@ -224,21 +191,28 @@ def push_screening_to_ghl(email: str, answers: list, legacy_code: str, prospect_
         )
         print(f"Tag update status: {tag_response.status_code}")
 
-        # 🔥 Single batch update with TRUE API field IDs for Q1–Q6
-        custom_fields = {
-            "UNyQ5ZdjLihqjycS22lc": answers[0],  # Q1
-            "lDkz6Qsg5ZjLMAXaK381": answers[1],  # Q2
-            "LQkf4Bzx5ZW8y3aPF6b7": answers[2],  # Q3
-            "Vk3oIWdHChpQPlX201fZ": answers[3],  # Q4
-            "dCDnpK3iAY3k8prEmJs7": answers[4],  # Q5
-            "4MwUuyWamknHDzYeko6L": answers[5],  # Q6
-            "legacy_code_id": legacy_code,
-            "atrid": prospect_id,
-        }
+        # -----------------------
+        # TRUE BATCH PAYLOAD
+        # -----------------------
+        custom_fields_payload = [
+            {"id": "UNyQ5ZdjLihqjycS22lc", "value": answers[0]},  # Q1
+            {"id": "lDkz6Qsg5ZjLMAXaK381", "value": answers[1]},  # Q2
+            {"id": "LQkf4Bzx5ZW8y3aPF6b7", "value": answers[2]},  # Q3
+            {"id": "Vk3oIWdHChpQPlX201fZ", "value": answers[3]},  # Q4
+            {"id": "dCDnpK3iAY3k8prEmJs7", "value": answers[4]},  # Q5
+            {"id": "4MwUuyWamknHDzYeko6L", "value": answers[5]},  # Q6
+            {"id": "legacy_code_id", "value": legacy_code},
+            {"id": "atrid", "value": prospect_id},
+        ]
 
-        payload = {"customField": custom_fields}
+        print("------ SENDING CUSTOM FIELDS TO GHL ------")
+        for f in custom_fields_payload:
+            print(f"Field ID: {f['id']} | Value: {str(f['value'])[:60]}")
+        print("-------------------------------------------")
 
-        print(f"📦 Sending batch update to GHL for contact {ghl_id}")
+        payload = {"customFields": custom_fields_payload}
+
+        print(f"📦 Sending TRUE batch update to GHL for contact {ghl_id}")
         batch_response = requests.put(
             f"{GHL_BASE_URL}/contacts/{ghl_id}",
             headers=headers,
@@ -247,26 +221,27 @@ def push_screening_to_ghl(email: str, answers: list, legacy_code: str, prospect_
 
         print(f"📊 Batch update status: {batch_response.status_code}")
         if batch_response.status_code != 200:
-            print(f"❌ Batch update response: {batch_response.text[:500]}")
+            print("❌ Batch update failed:")
+            print(batch_response.text[:500])
+        else:
+            print("✅ Batch update SUCCESS")
 
-        # ✅ Update Prospect with GHL User ID, Op Legacy Code AND Op Email
         if assigned:
             update_prospect_with_operator_info(prospect_id, assigned)
-        
+
         return assigned
 
     except Exception as e:
-        print(f"GHL Screening Sync Error: {e}")
+        print(f"❌ GHL Screening Sync Error: {e}")
         return None
 
 
-# ---------------------- ROUTE: Serve HTML ---------------------- #
+# ---------------------- ROUTES ---------------------- #
 @app.route("/")
 def index():
     return render_template("chat.html")
 
 
-# ---------------------- ROUTE: /submit ---------------------- #
 @app.route("/submit", methods=["POST"])
 def submit():
     try:
@@ -277,20 +252,15 @@ def submit():
         if not email:
             return jsonify({"error": "Missing email"}), 400
 
-        # Guarantee 6 answers (prevent backend failure)
         while len(answers) < 6:
             answers.append("No response")
 
-        # Create or find Prospect record
         legacy_code, prospect_id = get_or_create_prospect(email)
 
-        # Save NEW Q1–Q6 in Airtable
         save_screening_to_airtable(legacy_code, prospect_id, answers)
 
-        # Sync into GHL (which will also update operator assignment)
         assigned_user_id = push_screening_to_ghl(email, answers, legacy_code, prospect_id)
 
-        # Build redirect URL to NextStep
         if assigned_user_id:
             redirect_url = f"{NEXTSTEP_URL}?uid={assigned_user_id}"
         else:
