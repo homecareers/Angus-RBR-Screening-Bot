@@ -133,8 +133,8 @@ def get_or_create_prospect(email: str):
     return legacy_code, rec_id
 
 
-# ---------------------- SAVE FIRST SURVEY (Q1–Q6) ---------------------- #
-def save_screening_to_airtable(legacy_code: str, prospect_id: str, answers: list):
+# ---------------------- SAVE SNAPSHOT SURVEY (Q1–Q6) ---------------------- #
+def save_snapshot_survey_to_airtable(legacy_code: str, prospect_id: str, answers: list):
     fields = {
         "Legacy Code": legacy_code,
         "Prospects": [prospect_id],
@@ -152,10 +152,10 @@ def save_screening_to_airtable(legacy_code: str, prospect_id: str, answers: list
     return r.json().get("id")
 
 
-# ---------------------- GHL SYNC (FIXED - Using Field Keys) ---------------------- #
-def push_screening_to_ghl(email: str, answers: list, legacy_code: str, prospect_id: str):
+# ---------------------- GHL SYNC — SNAPSHOT SURVEY ---------------------- #
+def push_snapshot_survey_to_ghl(email: str, answers: list, legacy_code: str, prospect_id: str):
     """
-    Q1–Q6 via batch using field keys (same format as Deep Dive).
+    Snapshot Survey Q1–Q6 via batch using field keys.
     legacy_code_id + atrid via old, proven per-field method.
     """
     try:
@@ -191,11 +191,11 @@ def push_screening_to_ghl(email: str, answers: list, legacy_code: str, prospect_
         tag_response = requests.put(
             f"{GHL_BASE_URL}/contacts/{ghl_id}",
             headers=headers,
-            json={"tags": ["legacy screening submitted"]}
+            json={"tags": ["snapshot survey submitted"]}
         )
         print(f"Tag update status: {tag_response.status_code}")
 
-        # ---------- BATCH: Q1–Q6 (FIXED - using field keys) ----------
+        # ---------- BATCH: Q1–Q6 ----------
         q1_to_q6_fields = {
             "q1_reason_for_business": str(answers[0]),
             "q2_lifework_starting_point": str(answers[1]),
@@ -205,26 +205,26 @@ def push_screening_to_ghl(email: str, answers: list, legacy_code: str, prospect_
             "q6_business_style_gem": str(answers[5]),
         }
 
-        print("------ SENDING Q1–Q6 CUSTOM FIELDS TO GHL ------")
+        print("------ SENDING SNAPSHOT SURVEY Q1–Q6 CUSTOM FIELDS TO GHL ------")
         for key, val in q1_to_q6_fields.items():
             print(f"Field Key: {key} | Value: {str(val)[:60]}")
-        print("------------------------------------------------")
+        print("----------------------------------------------------------------")
 
-        print(f"📦 Sending Q1–Q6 batch update to GHL for contact {ghl_id}")
         batch_response = requests.put(
             f"{GHL_BASE_URL}/contacts/{ghl_id}",
             headers=headers,
-            json={"customField": q1_to_q6_fields}  # ✅ Same format as Deep Dive
+            json={"customField": q1_to_q6_fields}
         )
 
-        print(f"📊 Q1–Q6 batch status: {batch_response.status_code}")
+        print(f"📊 Snapshot Survey Q1–Q6 batch status: {batch_response.status_code}")
+
         if batch_response.status_code != 200:
-            print("❌ Q1–Q6 batch failed:")
+            print("❌ Snapshot Survey batch failed:")
             print(batch_response.text[:500])
         else:
-            print("✅ Q1–Q6 batch SUCCESS")
+            print("✅ Snapshot Survey batch SUCCESS")
 
-        # ---------- LEGACY CODE + ATRID (old, proven method) ----------
+        # ---------- LEGACY CODE + ATRID ----------
         field_updates = [
             {"legacy_code_id": legacy_code},
             {"atrid": prospect_id},
@@ -237,7 +237,6 @@ def push_screening_to_ghl(email: str, answers: list, legacy_code: str, prospect_
 
                 print(f"➡ Updating {field_name} via legacy method")
 
-                # primary format
                 response = requests.put(
                     f"{GHL_BASE_URL}/contacts/{ghl_id}",
                     headers=headers,
@@ -247,10 +246,7 @@ def push_screening_to_ghl(email: str, answers: list, legacy_code: str, prospect_
                 if response.status_code == 200:
                     print(f"✅ {field_name} updated (primary) -> {str(field_value)[:60]}")
                     continue
-                else:
-                    print(f"⚠️ {field_name} primary failed: {response.status_code}")
 
-                # fallback format
                 alt_response = requests.put(
                     f"{GHL_BASE_URL}/contacts/{ghl_id}",
                     headers=headers,
@@ -274,7 +270,7 @@ def push_screening_to_ghl(email: str, answers: list, legacy_code: str, prospect_
         return assigned
 
     except Exception as e:
-        print(f"❌ GHL Screening Sync Error: {e}")
+        print(f"❌ GHL Snapshot Survey Sync Error: {e}")
         return None
 
 
@@ -299,9 +295,9 @@ def submit():
 
         legacy_code, prospect_id = get_or_create_prospect(email)
 
-        save_screening_to_airtable(legacy_code, prospect_id, answers)
+        save_snapshot_survey_to_airtable(legacy_code, prospect_id, answers)
 
-        assigned_user_id = push_screening_to_ghl(email, answers, legacy_code, prospect_id)
+        assigned_user_id = push_snapshot_survey_to_ghl(email, answers, legacy_code, prospect_id)
 
         if assigned_user_id:
             redirect_url = f"{NEXTSTEP_URL}?uid={assigned_user_id}"
