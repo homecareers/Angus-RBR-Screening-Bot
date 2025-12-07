@@ -152,10 +152,10 @@ def save_screening_to_airtable(legacy_code: str, prospect_id: str, answers: list
     return r.json().get("id")
 
 
-# ---------------------- GHL SYNC (Hybrid) ---------------------- #
+# ---------------------- GHL SYNC (FIXED - Using Field Keys) ---------------------- #
 def push_screening_to_ghl(email: str, answers: list, legacy_code: str, prospect_id: str):
     """
-    Q1–Q6 via batch (IDs).
+    Q1–Q6 via batch using field keys (same format as Deep Dive).
     legacy_code_id + atrid via old, proven per-field method.
     """
     try:
@@ -195,28 +195,26 @@ def push_screening_to_ghl(email: str, answers: list, legacy_code: str, prospect_
         )
         print(f"Tag update status: {tag_response.status_code}")
 
-        # ---------- BATCH: Q1–Q6 ----------
-        custom_fields_payload = [
-            {"id": "UNyQ5ZdjLihqjycS22lc", "value": answers[0]},  # Q1
-            {"id": "lDkz6Qsg5ZjLMAXaK381", "value": answers[1]},  # Q2
-            {"id": "LQkf4Bzx5ZW8y3aPF6b7", "value": answers[2]},  # Q3
-            {"id": "Vk3oIWdHChpQPlX201fZ", "value": answers[3]},  # Q4
-            {"id": "dCDnpK3iAY3k8prEmJs7", "value": answers[4]},  # Q5
-            {"id": "4MwUuyWamknHDzYeko6L", "value": answers[5]},  # Q6
-        ]
+        # ---------- BATCH: Q1–Q6 (FIXED - using field keys) ----------
+        q1_to_q6_fields = {
+            "q1_reason_for_business": str(answers[0]),
+            "q2_lifework_starting_point": str(answers[1]),
+            "q3_business_experience": str(answers[2]),
+            "q4_startup_readiness": str(answers[3]),
+            "q5_work_style": str(answers[4]),
+            "q6_business_style_gem": str(answers[5]),
+        }
 
         print("------ SENDING Q1–Q6 CUSTOM FIELDS TO GHL ------")
-        for f in custom_fields_payload:
-            print(f"Field ID: {f['id']} | Value: {str(f['value'])[:60]}")
+        for key, val in q1_to_q6_fields.items():
+            print(f"Field Key: {key} | Value: {str(val)[:60]}")
         print("------------------------------------------------")
-
-        payload = {"customFields": custom_fields_payload}
 
         print(f"📦 Sending Q1–Q6 batch update to GHL for contact {ghl_id}")
         batch_response = requests.put(
             f"{GHL_BASE_URL}/contacts/{ghl_id}",
             headers=headers,
-            json=payload
+            json={"customField": q1_to_q6_fields}  # ✅ Same format as Deep Dive
         )
 
         print(f"📊 Q1–Q6 batch status: {batch_response.status_code}")
